@@ -14,4 +14,4 @@ If you changed the code and want to test it first before building the executable
 2. build the docker:
    `docker build -t build_emerse_app .`
 3. Run the docker
-   `docker run -d --name build_emerse_app_container build_emerse_app -v .`
+`docker run -d --name build_emerse_app_container build_emerse_app --mount type=bind,source=../test_binary/,target=/app`

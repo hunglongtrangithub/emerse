@@ -17,18 +17,11 @@ RUN update-alternatives --install /usr/bin/python python /usr/bin/python${PYTHON
 
 COPY ./run.py /app/run.py
 COPY ./.env /app/.env
+COPY ./requirements.txt /app/requirements.txt
 WORKDIR /app
 
-RUN pip install pyinstaller
-RUN pip install torch 
-RUN pip install transformers
-RUN pip install accelerate
-RUN pip install Flask
-RUN pip install waitress
-RUN pip install boto3
-RUN pip install python-dotenv
-RUN pip install html2text
-RUN pyinstaller --onefile /app/run.py
+RUN pip install --no-cache-dir -r requirements.txt \
+  && pyinstaller --onefile /app/run.py
 
 
 EXPOSE 5000
