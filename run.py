@@ -73,13 +73,15 @@ def load_models():
     )
     return
 
-# TODO: think about doing batch predictions for multiple reports.
 def model_predict(
-    input_text, model, tokenizer, device, tokenizer_kwargs={}, model_kwargs={}
+    input_texts: list[str], model, tokenizer, device, tokenizer_kwargs={}, model_kwargs={}
 ):
-    # Tokenize input sequence with truncation
+    if not input_texts:
+        return [], []
+    # Read about truncation & padding behaviors here: https://huggingface.co/docs/transformers/pad_truncation
     inputs = tokenizer(
-        input_text,
+        input_texts,
+        padding=True,
         truncation=True,
         max_length=MAX_LENGTH,
         return_tensors="pt",
@@ -87,104 +89,128 @@ def model_predict(
     ).to(device)
 
     model.to(device)
-    # Make predictions
     with torch.no_grad():
         outputs = model(**inputs, **model_kwargs)
         logits = outputs.logits
 
-    # Apply softmax to get confidence scores
     probs = torch.nn.functional.softmax(logits, dim=1)
-    max_prob1, predicted_label_id = torch.max(probs, dim=1)
+    max_probs, predicted_label_ids = torch.max(probs, dim=1)
+    max_probs, predicted_label_ids = max_probs.tolist(), predicted_label_ids.tolist()
+    predicted_label = [model.config.id2label[label_id] for label_id in predicted_label_ids]
 
-    predicted_label1 = model.config.id2label[predicted_label_id.item()]
+    return predicted_label, max_probs
 
-    return predicted_label1, max_prob1.item()
-
-def predict(report):
-    predicted_label_pat, max_prob_pat = model_predict(
-        report, model_pat, tokenizer_pat, device
+def predict(report_texts):
+    # all of these lists have the same length
+    # add other generation arguments as needed here
+    predicted_labels_pat, max_probs_pat = model_predict(
+        report_texts, model_pat, tokenizer_pat, device
     )
-    predicted_label_lat, max_prob_lat = model_predict(
-        report, model_lat, tokenizer_lat, device
+    predicted_labels_lat, max_probs_lat = model_predict(
+        report_texts, model_lat, tokenizer_lat, device
     )
-    predicted_label_gra, max_prob_gra = model_predict(
-        report, model_gra, tokenizer_gra, device
+    predicted_labels_gra, max_probs_gra = model_predict(
+        report_texts, model_gra, tokenizer_gra, device
     )
-    predicted_label_lym, max_prob_lym = model_predict(
-        report, model_lym, tokenizer_lym, device
+    predicted_labels_lym, max_probs_lym = model_predict(
+        report_texts, model_lym, tokenizer_lym, device
     )
 
     return [
         {
             "field": "PAT",
             "field_name": "Pathology",
-            "value": predicted_label_pat,
-            "max_prob": max_prob_pat,
+            "value": predicted_labels_pat,
+            "max_prob": max_probs_pat,
         },
         {
             "field": "LAT",
             "field_name": "Laterality",
-            "value": predicted_label_lat,
-            "max_prob": max_prob_lat,
+            "value": predicted_labels_lat,
+            "max_prob": max_probs_lat,
         },
         {
             "field": "GRA",
             "field_name": "Grade",
-            "value": predicted_label_gra,
-            "max_prob": max_prob_gra,
+            "value": predicted_labels_gra,
+            "max_prob": max_probs_gra,
         },
         {
             "field": "LYM",
             "field_name": "Lymph Node Metastasis",
-            "value": predicted_label_lym,
-            "max_prob": max_prob_lym,
+            "value": predicted_labels_lym,
+            "max_prob": max_probs_lym,
         },
     ]
 
 
-def get_report_with_table(report_html: str) -> str:
-    """
-    Extracts the report text from the HTML and adds a table with the predictions.
-    Assumes report is in proper HTML format (properly closed tags, etc.).
-    """
-    soup = BeautifulSoup(report_html, "html.parser")
+def is_valid_report(report):
+    if "RPT_TEXT" not in report:
+        logger.error("RPT_TEXT not found in report.")
+        return None
+    soup = BeautifulSoup(report["RPT_TEXT"], "html.parser")
     if soup.body is None:
-        raise ValueError("No body tag found in the report.")
+        logger.error("No body tag found in the report.")
+        return None
+    report_text = soup.body.get_text(strip=True)
+    if not report_text or report_text.lower() == "n/a":
+        logger.error("No text found in the report.")
+        return None
+    return report, soup, report_text
 
-    report = soup.body.get_text(strip=True)
-    if not report:
-        raise ValueError("No text found in the report.")
-
-    predictions = predict(report)
-
-    doc, tag, text = Doc().tagtext()
-    with tag("table"):
-        with tag("tr"):
-            with tag("th"):
-                text("")
-            for prediction in predictions:
+def get_reports_with_table(reports):
+    """
+    Find valid reports, predict the values, and add the predictions to the report as a table.
+    Mutate the original reports and return them.
+    Invalid reports are returned as is.
+    """
+    # get groupings of valid reports, soups, and texts
+    valid_reports = []
+    valid_soups = []
+    valid_texts = []
+    for report in reports:
+        report_data = is_valid_report(report)
+        if report_data:
+            report, soup, report_text = report_data
+            valid_reports.append(report)
+            valid_soups.append(soup)
+            valid_texts.append(report_text)
+    logger.debug(f"Number of valid reports: {len(valid_reports)}")
+    # TODO: process in small fixed-size batches to avoid GPU memory overload
+    batch_predictions = predict(valid_texts)
+    for i, soup in enumerate(valid_soups):
+        doc, tag, text = Doc().tagtext()
+        with tag("table"):
+            with tag("tr"):
                 with tag("th"):
-                    text(prediction["field_name"])
-        with tag("tr"):
-            with tag("th"):
-                text("Value")
-            for prediction in predictions:
-                with tag("td"):
-                    with tag("field", name=prediction["field"], type="string"):
-                        text(prediction["value"])
-        with tag("tr"):
-            with tag("th"):
-                text("Max Prob")
-            for prediction in predictions:
-                with tag("td"):
-                    with tag(
-                        "field", name=f"{prediction['field']}_prob", type="string"
-                    ):
-                        text(prediction["max_prob"])
+                    text("")
+                for prediction_type in batch_predictions:
+                    with tag("th"):
+                        text(prediction_type["field_name"])
+            with tag("tr"):
+                with tag("th"):
+                    text("Value")
+                for prediction_type in batch_predictions:
+                    with tag("td"):
+                        with tag("field", name=prediction_type["field"], type="string"):
+                            text(prediction_type["value"][i])
+            with tag("tr"):
+                with tag("th"):
+                    text("Max Prob")
+                for prediction_type in batch_predictions:
+                    with tag("td"):
+                        with tag(
+                            "field", name=f"{prediction_type['field']}_prob", type="string"
+                        ):
+                            text(prediction_type["max_prob"][i])
 
-    table_html = doc.getvalue()
-    soup.body.append(BeautifulSoup(table_html, "html.parser"))
-    return str(soup)
+        table_html = doc.getvalue()
+        soup.body.append(BeautifulSoup(table_html, "html.parser"))
+    
+    # mutate the original reports with the new soups containing the tables
+    for report, soup in zip(valid_reports, valid_soups):
+        report["RPT_TEXT"] = str(soup)
+    return reports
 
 
 app = Flask(__name__)
@@ -260,7 +286,7 @@ def after_request(response):
 
 @app.before_request
 def log_request_info():
-    logger.info(f'Received {request.method} request on {request.path}')
+    logger.debug(f'Received {request.method} request on {request.path}')
     logger.debug(f'Headers: {request.headers}')
     logger.debug(f'Body: {request.get_data()}')
 
@@ -296,25 +322,21 @@ def predict_test():
             )
             continue
         logger.info(f"Number of new reports in {filepath}: {len(json_input)}")
+        
+        json_input = json_input[:5] # for testing
+        try:
+            reports = get_reports_with_table(json_input)
+        except Exception as e:
+            logger.error(f"Error in processing reports: {e}")
+            continue
 
-        for i, report_item in enumerate(json_input[:5]):
-            if "RPT_TEXT" not in report_item:
-                logger.error("RPT_TEXT not found in report_item.")
-                continue
-            try:
-                report = report_item["RPT_TEXT"]
-                report_with_table = get_report_with_table(report)
-                logger.debug(f"Report with table: {report_with_table}")
-                report_item["RPT_TEXT"] = report_with_table
-                count += 1
-            except Exception as e:
-                logger.error(f"Error in processing report {i}: {e}")
-
+        count += len(reports)
         logger.info(
             f"{filepath}: Done predicting new reports. Number of processed reports: {count}"
         )
 
         fileout = output_directory / filepath.name
+        logger.debug(f"Writing to file: {fileout}")
         with fileout.open("w") as file:
             json.dump(json_input, file, indent=4)
 
@@ -349,23 +371,19 @@ def process_files():
             )
             continue
         logger.info("Number of new reports: " + str(len(json_input)))
-
-        for i, report_item in enumerate(json_input):
-            if "RPT_TEXT" not in report_item:
-                logger.error("RPT_TEXT not found in report_item.")
-                continue
-            try:
-                report = report_item["RPT_TEXT"]
-                report_with_table = get_report_with_table(report)
-                report_item["RPT_TEXT"] = report_with_table
-                count += 1
-            except Exception as e:
-                logger.error(f"Error in processing report {i}: {e}")
+        
+        try:
+            reports = get_reports_with_table(json_input)
+        except Exception as e:
+            logger.error(f"Error in processing reports: {e}")
+            continue
+        
+        count += len(reports)
         logger.info(
             f"Done predicting new reports. Number of processed reports: {count}"
         )
 
-        updated_json = json.dumps(json_input, indent=4).encode("utf-8")
+        updated_json = json.dumps(reports, indent=4).encode("utf-8")
         bucket.put_object(
             Body=updated_json,
             Key=obj_key,  # WARN: save to same key or different key?
@@ -378,6 +396,7 @@ def process_files():
 
 
 def main():
+    logger.info("Starting NLP application...")
     try:
         logger.info("Loading models...")
         load_models()

@@ -1,8 +1,11 @@
+import json
 import os
 import glob
 from pathlib import Path
 from bs4 import BeautifulSoup
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
+import torch
+
 if os.getenv("DEBUG"):
     print("Debug mode enabled")
 else:
@@ -26,16 +29,10 @@ def test_soup():
     print(soup.body)
 
 def test_batch():
-    # use a sentiment analysis model
-    checkpoint = "nlptown/bert-base-multilingual-uncased-sentiment"
-    tokenizer = AutoTokenizer.from_pretrained(checkpoint)
-    model = AutoModelForSequenceClassification.from_pretrained(checkpoint)
-    batch_inputs = ["I love you", "I hate you"]
-    inputs = tokenizer(batch_inputs, return_tensors="pt", padding=True, truncation=True)
-    outputs = model(**inputs)
-    # map to sentiment labels
-    print(outputs.logits.shape)
-    sentiment = outputs.logits.argmax(dim=1)
-    print(sentiment)
+    from run import load_models, get_reports_with_table
+    load_models()
+    reports = json.loads(open("input/test_batch.json").read())
+    reports = get_reports_with_table(reports)
+    json.dump(reports, open("output/test_batch.json", "w"), indent=2)
 if __name__ == "__main__":
     test_batch()
