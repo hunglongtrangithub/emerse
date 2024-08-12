@@ -15,6 +15,7 @@ from yattag import Doc
 
 DEBUG = os.getenv("DEBUG") or False
 MAX_LENGTH = 4096  # Maximum length of input sequence to truncate
+BATCH_SIZE = 5  # Batch size for prediction
 
 if DEBUG:
     logging.basicConfig(level=logging.DEBUG)
@@ -177,39 +178,47 @@ def get_reports_with_table(reports):
             valid_texts.append(report_text)
     logger.debug(f"Number of valid reports: {len(valid_reports)}")
     # TODO: process in small fixed-size batches to avoid GPU memory overload
-    batch_predictions = predict(valid_texts)
-    for i, soup in enumerate(valid_soups):
-        doc, tag, text = Doc().tagtext()
-        with tag("table"):
-            with tag("tr"):
-                with tag("th"):
-                    text("")
-                for prediction_type in batch_predictions:
-                    with tag("th"):
-                        text(prediction_type["field_name"])
-            with tag("tr"):
-                with tag("th"):
-                    text("Value")
-                for prediction_type in batch_predictions:
-                    with tag("td"):
-                        with tag("field", name=prediction_type["field"], type="string"):
-                            text(prediction_type["value"][i])
-            with tag("tr"):
-                with tag("th"):
-                    text("Max Prob")
-                for prediction_type in batch_predictions:
-                    with tag("td"):
-                        with tag(
-                            "field", name=f"{prediction_type['field']}_prob", type="string"
-                        ):
-                            text(prediction_type["max_prob"][i])
+    for start in range(0, len(valid_reports), BATCH_SIZE):
+        end = start + BATCH_SIZE
+        batch_texts = valid_texts[start:end]
+        batch_soups = valid_soups[start:end]
+        batch_reports = valid_reports[start:end]
 
-        table_html = doc.getvalue()
-        soup.body.append(BeautifulSoup(table_html, "html.parser"))
-    
-    # mutate the original reports with the new soups containing the tables
-    for report, soup in zip(valid_reports, valid_soups):
-        report["RPT_TEXT"] = str(soup)
+        batch_predictions = predict(batch_texts)
+
+        for i, soup in enumerate(batch_soups):
+            doc, tag, text = Doc().tagtext()
+            with tag("table"):
+                with tag("tr"):
+                    with tag("th"):
+                        text("")
+                    for prediction_type in batch_predictions:
+                        with tag("th"):
+                            text(prediction_type["field_name"])
+                with tag("tr"):
+                    with tag("th"):
+                        text("Value")
+                    for prediction_type in batch_predictions:
+                        with tag("td"):
+                            with tag("field", name=prediction_type["field"], type="string"):
+                                text(prediction_type["value"][i])
+                with tag("tr"):
+                    with tag("th"):
+                        text("Max Prob")
+                    for prediction_type in batch_predictions:
+                        with tag("td"):
+                            with tag(
+                                "field", name=f"{prediction_type['field']}_prob", type="string"
+                            ):
+                                text(prediction_type["max_prob"][i])
+
+            table_html = doc.getvalue()
+            soup.body.append(BeautifulSoup(table_html, "html.parser"))
+        
+        # mutate the original reports with the new soups containing the tables
+        for report, soup in zip(batch_reports, batch_soups):
+            report["RPT_TEXT"] = str(soup)
+        logger.info(f"Predicted {len(batch_reports)}/{len(valid_reports)} reports")
     return reports
 
 
@@ -323,7 +332,7 @@ def predict_test():
             continue
         logger.info(f"Number of new reports in {filepath}: {len(json_input)}")
         
-        json_input = json_input[:5] # for testing
+        json_input = json_input[:10] # for testing
         try:
             reports = get_reports_with_table(json_input)
         except Exception as e:
