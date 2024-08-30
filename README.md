@@ -7,8 +7,13 @@ This project builds a binary file executing from python script using PyInstaller
 - [uv](https://github.com/astral-sh/uv) for package management
 
 ## Installation
+1. Clone the repository
 ```bash
-uv pip install -r requirements.txt
+git clone https://github.com/hunglongtrangithub/emerse.git
+```
+2. Install dependencies
+```bash
+uv venv && uv pip install -r requirements.txt
 ```
 
 ## Usage
