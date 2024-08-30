@@ -174,12 +174,12 @@ def generate_html_report(report_text, batch_predictions, index):
     # Prepare the data for the template
     predictions = [
         {
-            "field_name": prediction_type["field_name"],
-            "field": prediction_type["field"],
-            "value": prediction_type["value"][index],
-            "max_prob": prediction_type["max_prob"][index],
+            "field_name": prediction["field_name"],
+            "field": prediction["field"],
+            "value": prediction["value"][index],
+            "max_prob": prediction["max_prob"][index],
         }
-        for prediction_type in batch_predictions
+        for prediction in batch_predictions
     ]
 
     # Render the template with the report text and predictions data
