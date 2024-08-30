@@ -1,0 +1,10 @@
+__pycache__
+.env
+build
+dist
+log
+models
+emerse_clinical_docs*
+*.spec
+run
+output
