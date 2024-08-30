@@ -11,20 +11,28 @@ import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import boto3
 from bs4 import BeautifulSoup
-from yattag import Doc
+from jinja2 import Environment, FileSystemLoader
 
-DEBUG = os.getenv("DEBUG") or False
+# Load the Jinja2 environment
+template_dir = Path(__file__).parent / "templates"
+env = Environment(loader=FileSystemLoader(template_dir))
+template = env.get_template("report_template.html")
+# print(template.render())
+
+MODE = os.getenv("MODE") or "dev"
 MAX_LENGTH = 4096  # Maximum length of input sequence to truncate
-BATCH_SIZE = 5  # Batch size for prediction
+BATCH_SIZE = 32  # Batch size for prediction
 
-if DEBUG:
+if MODE == "debug":
     logging.basicConfig(level=logging.DEBUG)
+elif MODE == "dev":
+    logging.basicConfig(level=logging.INFO)
 else:
     Path("./log").mkdir(exist_ok=True)
     logging.basicConfig(filename="./log/nlp_app.log", level=logging.INFO)
 
 logger = logging.getLogger(__name__)
-logger.info(f"Debug mode: {DEBUG}")
+logger.info(f"Mode: {MODE}")
 # Todo: Discuss with IT on a protocol to find out which files have been processed,
 # and contain the results, which have failed and probably why, and intergrate it into the code.
 
@@ -74,8 +82,14 @@ def load_models():
     )
     return
 
+
 def model_predict(
-    input_texts: list[str], model, tokenizer, device, tokenizer_kwargs={}, model_kwargs={}
+    input_texts: list[str],
+    model,
+    tokenizer,
+    device,
+    tokenizer_kwargs={},
+    model_kwargs={},
 ):
     if not input_texts:
         return [], []
@@ -97,9 +111,12 @@ def model_predict(
     probs = torch.nn.functional.softmax(logits, dim=1)
     max_probs, predicted_label_ids = torch.max(probs, dim=1)
     max_probs, predicted_label_ids = max_probs.tolist(), predicted_label_ids.tolist()
-    predicted_label = [model.config.id2label[label_id] for label_id in predicted_label_ids]
+    predicted_label = [
+        model.config.id2label[label_id] for label_id in predicted_label_ids
+    ]
 
     return predicted_label, max_probs
+
 
 def predict(report_texts):
     # all of these lists have the same length
@@ -145,6 +162,31 @@ def predict(report_texts):
     ]
 
 
+def generate_html_report(report_text, batch_predictions, index):
+    """
+    Generate an HTML report based on the report text and batch predictions for a specific index.
+
+    :param report_text: The text of the report.
+    :param batch_predictions: List of prediction dictionaries.
+    :param index: The index of the current item in the batch.
+    :return: A string containing the generated HTML.
+    """
+    # Prepare the data for the template
+    predictions = [
+        {
+            "field_name": prediction_type["field_name"],
+            "field": prediction_type["field"],
+            "value": prediction_type["value"][index],
+            "max_prob": prediction_type["max_prob"][index],
+        }
+        for prediction_type in batch_predictions
+    ]
+
+    # Render the template with the report text and predictions data
+    html_content = template.render(report_text=report_text, predictions=predictions)
+    return html_content
+
+
 def is_valid_report(report):
     if "RPT_TEXT" not in report:
         logger.error("RPT_TEXT not found in report.")
@@ -157,7 +199,8 @@ def is_valid_report(report):
     if not report_text or report_text.lower() == "n/a":
         logger.error("No text found in the report.")
         return None
-    return report, soup, report_text
+    return report, report_text
+
 
 def get_reports_with_table(reports):
     """
@@ -165,60 +208,32 @@ def get_reports_with_table(reports):
     Mutate the original reports and return them.
     Invalid reports are returned as is.
     """
-    # get groupings of valid reports, soups, and texts
     valid_reports = []
-    valid_soups = []
     valid_texts = []
+
     for report in reports:
         report_data = is_valid_report(report)
         if report_data:
-            report, soup, report_text = report_data
+            report, report_text = report_data
             valid_reports.append(report)
-            valid_soups.append(soup)
             valid_texts.append(report_text)
-    logger.debug(f"Number of valid reports: {len(valid_reports)}")
-    # TODO: process in small fixed-size batches to avoid GPU memory overload
+
+    logger.info(f"Number of valid reports: {len(valid_reports)}")
+
     for start in range(0, len(valid_reports), BATCH_SIZE):
         end = start + BATCH_SIZE
         batch_texts = valid_texts[start:end]
-        batch_soups = valid_soups[start:end]
         batch_reports = valid_reports[start:end]
 
         batch_predictions = predict(batch_texts)
 
-        for i, soup in enumerate(batch_soups):
-            doc, tag, text = Doc().tagtext()
-            with tag("table"):
-                with tag("tr"):
-                    with tag("th"):
-                        text("")
-                    for prediction_type in batch_predictions:
-                        with tag("th"):
-                            text(prediction_type["field_name"])
-                with tag("tr"):
-                    with tag("th"):
-                        text("Value")
-                    for prediction_type in batch_predictions:
-                        with tag("td"):
-                            with tag("field", name=prediction_type["field"], type="string"):
-                                text(prediction_type["value"][i])
-                with tag("tr"):
-                    with tag("th"):
-                        text("Max Prob")
-                    for prediction_type in batch_predictions:
-                        with tag("td"):
-                            with tag(
-                                "field", name=f"{prediction_type['field']}_prob", type="string"
-                            ):
-                                text(prediction_type["max_prob"][i])
+        for i, (report, report_text) in enumerate(zip(batch_reports, batch_texts)):
+            report_html = generate_html_report(report_text, batch_predictions, i)
+            # Update the original report with the new HTML content
+            report["RPT_TEXT"] = report_html
 
-            table_html = doc.getvalue()
-            soup.body.append(BeautifulSoup(table_html, "html.parser"))
-        
-        # mutate the original reports with the new soups containing the tables
-        for report, soup in zip(batch_reports, batch_soups):
-            report["RPT_TEXT"] = str(soup)
         logger.info(f"Predicted {len(batch_reports)}/{len(valid_reports)} reports")
+
     return reports
 
 
@@ -284,29 +299,42 @@ def application_data():
 
 envdump.add_section("application", application_data)
 
-app.add_url_rule("/healthcheck", "healthcheck", view_func=lambda: health.run())
+app.add_url_rule("/health_check", "healthcheck", view_func=lambda: health.run())
 app.add_url_rule("/environment", "environment", view_func=lambda: envdump.run())
+
 
 @app.after_request
 def after_request(response):
-    timestamp = strftime('[%Y-%b-%d %H:%M]')
-    logger.info('%s %s %s %s %s %s', timestamp, request.remote_addr, request.method, request.scheme, request.full_path, response.status)
+    timestamp = strftime("[%Y-%b-%d %H:%M]")
+    logger.info(
+        "%s %s %s %s %s %s",
+        timestamp,
+        request.remote_addr,
+        request.method,
+        request.scheme,
+        request.full_path,
+        response.status,
+    )
     return response
+
 
 @app.before_request
 def log_request_info():
-    logger.debug(f'Received {request.method} request on {request.path}')
-    logger.debug(f'Headers: {request.headers}')
-    logger.debug(f'Body: {request.get_data()}')
+    logger.debug(f"Received {request.method} request on {request.path}")
+    logger.debug(f"Headers: {request.headers}")
+    logger.debug(f"Body: {request.get_data()}")
+
 
 @app.errorhandler(Exception)
 def handle_exception(e):
     logger.error(f"An error occurred: {str(e)}", exc_info=True)
     return jsonify(error=str(e)), 500
 
+
 @app.route("/", methods=["GET"])
 def hello_world():
     return jsonify({"body": "Hello World"}), 200
+
 
 @app.route("/predict_test", methods=["GET"])
 def predict_test():
@@ -318,21 +346,19 @@ def predict_test():
     output_directory.mkdir(exist_ok=True)
 
     filepaths = input_directory.glob("*.json")
-    logger.debug(f"Filepaths: {filepaths}")
+    logger.info(f"Filepaths: {filepaths}")
 
     count = 0
     for filepath in filepaths:
-        logger.debug(f"Processing file: {filepath}")
+        logger.info(f"Processing file: {filepath}")
         with open(filepath, "r") as file:
             json_input = json.load(file)
         if not isinstance(json_input, list):
-            logger.error(
-                f"Invalid JSON input. Must be a list of reports. {json_input}"
-            )
+            logger.error(f"Invalid JSON input. Must be a list of reports. {json_input}")
             continue
         logger.info(f"Number of new reports in {filepath}: {len(json_input)}")
-        
-        json_input = json_input[:10] # for testing
+
+        json_input = json_input[:5]  # for testing
         try:
             reports = get_reports_with_table(json_input)
         except Exception as e:
@@ -345,10 +371,15 @@ def predict_test():
         )
 
         fileout = output_directory / filepath.name
-        logger.debug(f"Writing to file: {fileout}")
+        logger.info(f"Writing to file: {fileout}")
         with fileout.open("w") as file:
             json.dump(json_input, file, indent=4)
-
+        html_out = output_directory / (filepath.stem + ".html")
+        for report in reports:
+            if "RPT_TEXT" in report:
+                with html_out.open("w") as file:
+                    file.write(report["RPT_TEXT"])
+                break
     return {
         "statusCode": 200,
         "body": json.dumps({"processed reports count": count}, indent=4),
@@ -359,6 +390,7 @@ def predict_test():
 def process_files():
     s3 = boto3.resource("s3")
     bucket_name = os.getenv("S3_BUCKET_NAME")
+    logger.info(f"Reading files from bucket: {bucket_name}")
     bucket = s3.Bucket(bucket_name)
     objects_list = bucket.objects.all()
 
@@ -366,7 +398,7 @@ def process_files():
     for obj in objects_list:
         obj_key = obj.key
         obj_body = obj.get()["Body"].read().decode("utf-8")
-        logger.debug(f"File {obj_key} read from bucket.")
+        logger.info(f"File {obj_key} read from bucket.")
 
         try:
             # Load the JSON content
@@ -375,18 +407,16 @@ def process_files():
             logger.error(f"Failed to decode JSON from {obj_key}: {e}")
             continue
         if not isinstance(json_input, list):
-            logger.error(
-                f"Invalid JSON input. Must be a list of reports. {json_input}"
-            )
+            logger.error(f"Invalid JSON input. Must be a list of reports. {json_input}")
             continue
         logger.info("Number of new reports: " + str(len(json_input)))
-        
+
         try:
             reports = get_reports_with_table(json_input)
         except Exception as e:
             logger.error(f"Error in processing reports: {e}")
             continue
-        
+
         count += len(reports)
         logger.info(
             f"Done predicting new reports. Number of processed reports: {count}"
@@ -416,7 +446,7 @@ def main():
     try:
         logger.info("Loading environment variables...")
         load_dotenv()
-        logger.debug(
+        logger.info(
             f"S3 bucket name environment variable: {os.getenv('S3_BUCKET_NAME')}"
         )
     except Exception as e:
@@ -426,7 +456,7 @@ def main():
     from waitress import serve
 
     serve(app, host="0.0.0.0", port=5000)
-    
+
+
 if __name__ == "__main__":
     main()
-
