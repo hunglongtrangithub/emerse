@@ -17,15 +17,16 @@ from jinja2 import Environment, FileSystemLoader
 template_dir = Path(__file__).parent / "templates"
 env = Environment(loader=FileSystemLoader(template_dir))
 template = env.get_template("report_template.html")
-# print(template.render())
 
-MODE = os.getenv("MODE") or "dev"
-MAX_LENGTH = 4096  # Maximum length of input sequence to truncate
-BATCH_SIZE = 32  # Batch size for prediction
+# Environment variables
+DEBUG = os.getenv("DEBUG", False)
+MODE = os.getenv("MODE", "development")
+# Maximum length of input sequence to truncate
+MAX_LENGTH = os.getenv("MAX_LENGTH", 4096)
+# Batch size for prediction
+BATCH_SIZE = os.getenv("BATCH_SIZE", 32)
 
-if MODE == "debug":
-    logging.basicConfig(level=logging.DEBUG)
-elif MODE == "dev":
+if MODE == "development":
     logging.basicConfig(level=logging.INFO)
 else:
     Path("./log").mkdir(exist_ok=True)
@@ -33,8 +34,6 @@ else:
 
 logger = logging.getLogger(__name__)
 logger.info(f"Mode: {MODE}")
-# Todo: Discuss with IT on a protocol to find out which files have been processed,
-# and contain the results, which have failed and probably why, and intergrate it into the code.
 
 
 def load_models():
@@ -380,10 +379,8 @@ def predict_test():
                 with html_out.open("w") as file:
                     file.write(report["RPT_TEXT"])
                 break
-    return {
-        "statusCode": 200,
-        "body": json.dumps({"processed reports count": count}, indent=4),
-    }
+
+    return jsonify({"processed reports count": count}), 200
 
 
 @app.route("/predict", methods=["GET"])
@@ -419,7 +416,7 @@ def process_files():
 
         count += len(reports)
         logger.info(
-            f"Done predicting new reports. Number of processed reports: {count}"
+            f"{obj_key}: Done predicting new reports. Number of processed reports: {count}"
         )
 
         updated_json = json.dumps(reports, indent=4).encode("utf-8")
@@ -428,10 +425,7 @@ def process_files():
             Key=obj_key,  # WARN: save to same key or different key?
         )
 
-    return {
-        "statusCode": 200,
-        "body": json.dumps({"processed reports count": count}, indent=4),
-    }
+    return jsonify({"processed reports count": count}), 200
 
 
 def main():
