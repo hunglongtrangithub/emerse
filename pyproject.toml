@@ -1,0 +1,21 @@
+[project]
+name = "emerse-summarizer"
+version = "0.1.0"
+description = "Build a binary Flask app that summarizes text"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "beautifulsoup4>=4.12.3",
+    "boto3>=1.35.10",
+    "flask>=3.0.3",
+    "jinja2>=3.1.4",
+    "py-healthcheck>=1.10.1",
+    "pydantic>=2.8.2",
+    "python-dotenv>=1.0.1",
+    "torch>=2.4.0",
+    "transformers>=4.44.2",
+    "waitress>=3.0.0",
+]
+
+[tool.uv]
+dev-dependencies = ["moto[s3]>=5.0.13", "pyinstaller>=6.10.0", "ruff>=0.6.3"]
