@@ -10,9 +10,7 @@ from healthcheck import EnvironmentDump, HealthCheck
 
 from models import load_models
 from process_report import get_reports_with_table
-from config import get_logger
-
-logger = get_logger(__name__)
+from config import logger
 
 
 app = Flask(__name__)

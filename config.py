@@ -1,31 +1,29 @@
 import os
 from pathlib import Path
-import logging
+import sys
+
+from loguru import logger
 from dotenv import load_dotenv
 
 
 load_dotenv()
 
-MODE = os.getenv("MODE", "dev")
+
+# Environment variables
+DEBUG = os.getenv("DEBUG", False)
+MODE = os.getenv("MODE", "development")
+# Maximum length of input sequence to truncate
 MAX_LENGTH = int(os.getenv("MAX_LENGTH", 4096))
+# Batch size for prediction
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", 32))
 
-import logging
-import os
+# Configure Loguru based on MODE
+if MODE == "production":
+    log_file = Path("./log/nlp_app.log")
+    log_file.parent.mkdir(exist_ok=True)
+    logger.add(log_file, level="INFO", rotation="10 MB")
+else:
+    logger.remove()  # Remove default stderr logging
+    logger.add(sys.stderr, level="DEBUG" if DEBUG else "INFO")
 
-
-def get_logger(name):
-    # Determine the logging mode
-    mode = MODE.lower()  # Default to "dev" if MODE is not set
-
-    if mode == "debug":
-        logging.basicConfig(level=logging.DEBUG)
-    elif mode == "dev":
-        logging.basicConfig(level=logging.INFO)
-    else:
-        Path("./log").mkdir(exist_ok=True)
-        logging.basicConfig(filename="./log/nlp_app.log", level=logging.INFO)
-
-    # Create a logger with the given name
-    logger = logging.getLogger(name)
-    return logger
+logger.info(f"Mode: {MODE}. Debug: {DEBUG}")

@@ -1,9 +1,7 @@
 from pydantic import BaseModel
 import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
-from config import get_logger, MAX_LENGTH
-
-logger = get_logger(__name__)
+from config import logger, MAX_LENGTH
 
 
 class Prediction(BaseModel):

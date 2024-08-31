@@ -1,10 +1,8 @@
 from bs4 import BeautifulSoup
 from jinja2 import Environment, FileSystemLoader
 from pathlib import Path
-from config import get_logger, BATCH_SIZE
+from config import logger, BATCH_SIZE
 from models import Prediction, predict
-
-logger = get_logger(__name__)
 
 # Load the Jinja2 environment
 template_dir = Path(__file__).parent / "templates"
