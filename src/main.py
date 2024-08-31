@@ -7,9 +7,9 @@ import torch
 from flask import Flask, jsonify, request
 from healthcheck import EnvironmentDump, HealthCheck
 
-from models import load_models
-from process_report import get_reports_with_table
-from config import logger
+from .models import load_models
+from .process_report import get_reports_with_table
+from .config import logger, MODE, DEBUG
 
 
 app = Flask(__name__)
@@ -134,10 +134,7 @@ def process_report_files(file_loader, file_saver, test=False):
         )
 
         file_saver(file_id, reports)
-    return {
-        "statusCode": 200,
-        "body": json.dumps({"processed reports count": count}, indent=4),
-    }
+    return count
 
 
 def load_files_from_directory(input_directory):
@@ -204,14 +201,14 @@ def save_files_to_s3(bucket_name, obj_key, reports):
 @app.route("/predict_test", methods=["GET"])
 def predict_test():
     try:
-        response = process_report_files(
+        count = process_report_files(
             file_loader=lambda: load_files_from_directory("./input"),
             file_saver=lambda filepath, reports: save_files_to_directory(
                 "./output", filepath, reports
             ),
             test=True,
         )
-        return response
+        return jsonify({"processed reports count": count}), 200
     except FileNotFoundError as e:
         return jsonify({"error": str(e)}), 404
 
@@ -220,19 +217,20 @@ def predict_test():
 def process_files():
     s3_bucket_name = os.getenv("S3_BUCKET_NAME")
     try:
-        response = process_report_files(
+        count = process_report_files(
             file_loader=lambda: load_files_from_s3(s3_bucket_name),
             file_saver=lambda obj_key, reports: save_files_to_s3(
                 s3_bucket_name, obj_key, reports
             ),
         )
-        return response
+        return jsonify({"processed reports count": count}), 200
     except Exception as e:
         logger.error(f"Error in processing S3 files: {e}")
         return jsonify({"error": str(e)}), 500
 
 
 def main():
+    logger.info(f"Mode: {MODE}. Debug: {DEBUG}")
     logger.info("Starting NLP application...")
     try:
         logger.info("Loading models...")

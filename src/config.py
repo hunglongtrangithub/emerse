@@ -25,5 +25,3 @@ if MODE == "production":
 else:
     logger.remove()  # Remove default stderr logging
     logger.add(sys.stderr, level="DEBUG" if DEBUG else "INFO")
-
-logger.info(f"Mode: {MODE}. Debug: {DEBUG}")
