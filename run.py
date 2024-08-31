@@ -232,7 +232,7 @@ def get_reports_with_table(reports):
             # Update the original report with the new HTML content
             report["RPT_TEXT"] = report_html
 
-        logger.info(f"Predicted {len(batch_reports)}/{len(valid_reports)} reports")
+        logger.debug(f"Predicted {len(batch_reports)} reports")
 
     return reports
 
@@ -351,8 +351,13 @@ def predict_test():
     count = 0
     for filepath in filepaths:
         logger.info(f"Processing file: {filepath}")
-        with open(filepath, "r") as file:
-            json_input = json.load(file)
+        try:
+            # Load the JSON content
+            with open(filepath, "r") as file:
+                json_input = json.load(file)
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to decode JSON from {filepath}: {e}")
+            continue
         if not isinstance(json_input, list):
             logger.error(f"Invalid JSON input. Must be a list of reports. {json_input}")
             continue
@@ -419,7 +424,7 @@ def process_files():
 
         count += len(reports)
         logger.info(
-            f"Done predicting new reports. Number of processed reports: {count}"
+            f"{obj_key}: Done predicting new reports. Number of processed reports: {count}"
         )
 
         updated_json = json.dumps(reports, indent=4).encode("utf-8")
