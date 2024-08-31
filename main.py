@@ -1,7 +1,6 @@
 import json
 import os
 from pathlib import Path
-from time import strftime
 
 import boto3
 import torch
@@ -81,10 +80,8 @@ app.add_url_rule("/environment", "environment", view_func=lambda: envdump.run())
 
 @app.after_request
 def after_request(response):
-    timestamp = strftime("[%Y-%b-%d %H:%M]")
     logger.info(
-        "%s %s %s %s %s %s",
-        timestamp,
+        "{} {} {} {} {}",
         request.remote_addr,
         request.method,
         request.scheme,
@@ -103,8 +100,8 @@ def log_request_info():
 
 @app.errorhandler(Exception)
 def handle_exception(e):
-    logger.error(f"An error occurred: {str(e)}", exc_info=True)
-    return jsonify(error=str(e)), 500
+    logger.error(str(e), exc_info=True)
+    return str(e), 500
 
 
 @app.route("/", methods=["GET"])
@@ -246,8 +243,7 @@ def main():
 
     from waitress import serve
 
-    logger.info("Starting the server...")
-    serve(app, host="0.0.0.0", port=5000)
+    serve(app, host="0.0.0.0", port=os.getenv("PORT", 5000))
 
 
 if __name__ == "__main__":

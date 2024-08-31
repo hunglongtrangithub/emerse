@@ -7,7 +7,11 @@ OUTPUT_BINARY_PATH = /app/dist/run # copy to this directory to test the binary f
 LOCAL_OUTPUT_PATH = ./
 
 .PHONY: all
-all: build run copy clean lock
+all: build run copy clean lock dev
+
+.PHONY: dev
+dev:
+	hupper -m main
 
 .PHONY: lock
 lock:
