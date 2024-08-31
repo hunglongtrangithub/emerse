@@ -11,15 +11,19 @@ if os.getenv("DEBUG"):
 else:
     print("Debug mode disabled")
 
+
 def test_path():
     path = Path("./input")
     if path.exists():
         print("Path exists")
-    filepaths = path.glob('*.json')
+    filepaths = path.glob("*.json")
     filepath = next(filepaths)
+    print(filepath)
+
 
 def get_json_files(directory):
-    return glob.glob(os.path.join(directory, '*.json'))
+    return glob.glob(os.path.join(directory, "*.json"))
+
 
 def test_soup():
     html = """
@@ -28,11 +32,15 @@ def test_soup():
     soup = BeautifulSoup(html, "html.parser")
     print(soup.body)
 
+
 def test_batch():
     from run import load_models, get_reports_with_table
+
     load_models()
     reports = json.loads(open("input/test_batch.json").read())
     reports = get_reports_with_table(reports)
     json.dump(reports, open("output/test_batch.json", "w"), indent=2)
+
+
 if __name__ == "__main__":
     test_batch()
