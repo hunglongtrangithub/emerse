@@ -1,7 +1,6 @@
 import os
 from pathlib import Path
 import sys
-import json
 
 from loguru import logger
 from dotenv import load_dotenv
