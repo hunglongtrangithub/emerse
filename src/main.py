@@ -1,15 +1,17 @@
 import json
 import os
 from pathlib import Path
+from contextlib import nullcontext
 
 import boto3
+from moto import mock_aws
 import torch
 from flask import Flask, jsonify, request
 from healthcheck import EnvironmentDump, HealthCheck
 
 from .models import load_models
 from .process_report import get_reports_with_table
-from .config import logger, MODE, DEBUG
+from .config import logger, MODE, DEBUG, setup_testing_s3
 
 
 app = Flask(__name__)
@@ -179,6 +181,7 @@ def load_files_from_s3(bucket_name):
     for obj in objects_list:
         obj_key = obj.key
         obj_body = obj.get()["Body"].read().decode("utf-8")
+        logger.debug(f"Reading object: {obj_key}. Content: {obj_body[:100]}")
         try:
             yield obj_key, json.loads(obj_body)
         except json.JSONDecodeError as e:
@@ -229,6 +232,27 @@ def process_files():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/list_s3_bucket", methods=["GET"])
+def list_s3_bucket():
+    bucket_name = os.getenv("S3_BUCKET_NAME")
+    if not bucket_name:
+        return jsonify({"error": "S3_BUCKET_NAME environment variable is not set"}), 500
+    s3 = boto3.resource("s3")
+    bucket = s3.Bucket(bucket_name)
+    objects = list(bucket.objects.all())
+    return (
+        jsonify(
+            {
+                "contents": [
+                    {obj.key: obj.get()["Body"].read().decode("utf-8")}
+                    for obj in objects
+                ]
+            }
+        ),
+        200,
+    )
+
+
 def main():
     logger.info(f"Mode: {MODE}. Debug: {DEBUG}")
     logger.info("Starting NLP application...")
@@ -239,9 +263,19 @@ def main():
         logger.error(f"Error in loading models: {e}")
         return
 
-    from waitress import serve
+    def run_app():
+        if MODE == "testing":
+            with mock_aws():
+                setup_testing_s3()
+                from waitress import serve
 
-    serve(app, host="0.0.0.0", port=os.getenv("PORT", 5000))
+                serve(app, host="0.0.0.0", port=os.getenv("PORT", 5000))
+        else:
+            from waitress import serve
+
+            serve(app, host="0.0.0.0", port=os.getenv("PORT", 5000))
+
+    run_app()
 
 
 if __name__ == "__main__":
