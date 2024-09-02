@@ -13,7 +13,7 @@ git clone https://github.com/hunglongtrangithub/emerse.git
 ```
 2. Install dependencies
 ```bash
-uv venv && uv pip install -r requirements.txt
+uv sync
 ```
 
 ## Usage
