@@ -8,32 +8,19 @@ ENV PYTHON_VERSION=3.11
 
 
 # Install Python and essential packages (pip )
-RUN apt-get update &&  python${PYTHON_VERSION}-dev python3-pipapt-get install -y --no-install-recommends python${PYTHON_VERSION}
+RUN apt-get update && apt-get install -y --no-install-recommends python${PYTHON_VERSION}-dev python3-pip python${PYTHON_VERSION}
 
-# The installer requires curl (and certificates) to download the release archive
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates
-
-# Download the installer (version 0.4.1)
-ADD https://astral.sh/uv/0.4.1/install.sh /uv-installer.sh
-# Run the installer then remove it
-RUN sh /uv-installer.sh && rm /uv-installer.sh
-
-# Ensure the installed binary is on the `PATH`
-ENV PATH="/root/.cargo/bin/:$PATH"
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
 RUN update-alternatives --install /usr/bin/python python /usr/bin/python${PYTHON_VERSION} 1
 
-# install git
-#RUN apt-get update && apt-get -y install git
-
-
-COPY ./run.py /app/run.py
-COPY ./.env /app/.env
-COPY ./uv.lock /app/uv.lock
 WORKDIR /app
 
-RUN RUN uv sync --frozen\
-  && pyinstaller --onefile /app/run.py
+COPY ./run.py ./pyproject.toml ./uv.lock ./.env ./
+
+RUN uv sync --frozen
+RUN ./.venv/bin/pyinstaller --onefile /app/run.py
 
 
 EXPOSE 5000
