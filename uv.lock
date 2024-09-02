@@ -223,7 +223,6 @@ dependencies = [
     { name = "beautifulsoup4" },
     { name = "boto3" },
     { name = "flask" },
-    { name = "hupper" },
     { name = "jinja2" },
     { name = "loguru" },
     { name = "py-healthcheck" },
@@ -236,6 +235,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "hupper" },
     { name = "moto", extra = ["s3"] },
     { name = "pyinstaller" },
     { name = "pytest" },
@@ -247,7 +247,6 @@ requires-dist = [
     { name = "beautifulsoup4", specifier = ">=4.12.3" },
     { name = "boto3", specifier = ">=1.35.10" },
     { name = "flask", specifier = ">=3.0.3" },
-    { name = "hupper", specifier = ">=1.12.1" },
     { name = "jinja2", specifier = ">=3.1.4" },
     { name = "loguru", specifier = ">=0.7.2" },
     { name = "py-healthcheck", specifier = ">=1.10.1" },
@@ -260,6 +259,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "hupper", specifier = ">=1.12.1" },
     { name = "moto", extras = ["s3"], specifier = ">=5.0.13" },
     { name = "pyinstaller", specifier = ">=6.10.0" },
     { name = "pytest", specifier = ">=8.3.2" },

@@ -8,7 +8,6 @@ dependencies = [
     "beautifulsoup4>=4.12.3",
     "boto3>=1.35.10",
     "flask>=3.0.3",
-    "hupper>=1.12.1",
     "jinja2>=3.1.4",
     "loguru>=0.7.2",
     "py-healthcheck>=1.10.1",
@@ -21,6 +20,7 @@ dependencies = [
 
 [tool.uv]
 dev-dependencies = [
+    "hupper>=1.12.1",
     "moto[s3]>=5.0.13",
     "pyinstaller>=6.10.0",
     "pytest>=8.3.2",
