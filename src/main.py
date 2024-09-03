@@ -1,7 +1,6 @@
 import json
 import os
 from pathlib import Path
-from contextlib import nullcontext
 
 import boto3
 from moto import mock_aws
@@ -276,7 +275,3 @@ def main():
             serve(app, host="0.0.0.0", port=os.getenv("PORT", 5000))
 
     run_app()
-
-
-if __name__ == "__main__":
-    main()

@@ -7,20 +7,29 @@ FROM nvidia/cuda:12.5.1-devel-ubuntu22.04
 ENV PYTHON_VERSION=3.11
 
 
-# Install Python and essential packages (pip )
-RUN apt-get update && apt-get install -y --no-install-recommends python${PYTHON_VERSION}-dev python3-pip python${PYTHON_VERSION}
+# Install Python, pip, and essential packages
+RUN apt-get update && \
+  apt-get install -y --no-install-recommends \
+  python${PYTHON_VERSION} \
+  python${PYTHON_VERSION}-dev \
+  python3-pip \
+  python3-venv
+RUN apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Install uv
+# Install uv from a Docker container or GitHub
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
+# Set Python alternatives
 RUN update-alternatives --install /usr/bin/python python /usr/bin/python${PYTHON_VERSION} 1
 
 WORKDIR /app
 
+COPY ./templates/ ./templates/
+COPY ./src/ ./src/
 COPY ./run.py ./pyproject.toml ./uv.lock ./.env ./
 
-RUN uv sync --frozen
-RUN ./.venv/bin/pyinstaller --onefile /app/run.py
+RUN uv sync --frozen --no-cache
 
+CMD ["uv", "run", "run.py"]
 
 EXPOSE 5000

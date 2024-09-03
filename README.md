@@ -1,5 +1,5 @@
 # EMERSE Summarization
-This project builds a binary file executing from python script using PyInstaller, which serves a summarization model on nvidia machine with GPU on PORT 5000
+This project builds a Flask server that serves clinical document summarization models on NVIDIA machine with GPU on PORT 5000
 
 # Development
 ## Prerequisites
@@ -18,10 +18,10 @@ uv sync
 
 ## Usage
 ```bash
-python run.py
+uv run run.py
 ```
 
-## Build
+## Build with Docker
 ```bash
-pyinstaller --onefile run.py
+make build
 ```
