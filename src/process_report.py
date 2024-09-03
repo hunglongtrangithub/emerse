@@ -1,15 +1,11 @@
-import json
-
-import boto3
 from bs4 import BeautifulSoup
 from jinja2 import Environment, FileSystemLoader
-from pathlib import Path
 
 from .config import logger, BATCH_SIZE
 from .models import Prediction, predict
 
 # Load the Jinja2 environment
-template_dir = Path(__file__).parent.parent / "templates"
+template_dir = "./templates"
 env = Environment(loader=FileSystemLoader(template_dir))
 template = env.get_template("report_template.html")
 

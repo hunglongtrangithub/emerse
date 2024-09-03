@@ -24,11 +24,12 @@ RUN update-alternatives --install /usr/bin/python python /usr/bin/python${PYTHON
 
 WORKDIR /app
 
+COPY ./pyproject.toml ./uv.lock ./.env ./
+RUN uv sync --frozen --no-cache
+
 COPY ./templates/ ./templates/
 COPY ./src/ ./src/
-COPY ./run.py ./pyproject.toml ./uv.lock ./.env ./
-
-RUN uv sync --frozen --no-cache
+COPY ./run.py ./
 
 CMD ["uv", "run", "run.py"]
 

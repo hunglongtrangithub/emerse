@@ -51,9 +51,7 @@ def setup_testing_s3():
             Key="test_file_2.json", Body='[{"key": "value2"}, {"key": "value2"}]'
         )
         test_file = "test_batch.json"
-        file_content = open(
-            Path(__file__).parent.parent / "input" / test_file, "r"
-        ).read()
+        file_content = open(f"./input/{test_file}").read()
         s3.Bucket(bucket_name).put_object(Key="test_batch.json", Body=file_content)
         logger.info(f"Mock S3 bucket '{bucket_name}' created with test objects.")
 
