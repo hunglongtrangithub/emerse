@@ -15,7 +15,7 @@ format:
 
 .PHONY: dev
 dev:
-	hupper -m src.main
+	hupper -m run
 
 .PHONY: lock
 lock:
