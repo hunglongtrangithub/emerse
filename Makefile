@@ -1,10 +1,6 @@
 # Variables
 DOCKER_IMAGE_NAME = build_emerse_app
 DOCKER_CONTAINER_NAME = build_emerse_app_container
-# OUTPUT_BINARY_PATH = /app/dist
-# LOCAL_OUTPUT_PATH = ../test_binary/resources # cannot copy to this directory, due to premission error: chmod LOCAL_OUTPUT_PATH/dist: permission denied
-OUTPUT_BINARY_PATH = /app/dist/run # copy to this directory to test the binary file
-LOCAL_OUTPUT_PATH = ./
 
 .PHONY: all
 all: build run copy clean lock dev format
@@ -16,10 +12,6 @@ format:
 .PHONY: dev
 dev:
 	hupper -m run
-
-.PHONY: lock
-lock:
-	uv pip freeze | uv pip compile - -o requirements.txt
 
 .PHONY: build
 build:
@@ -33,11 +25,6 @@ run:
 	docker run -d --name $(DOCKER_CONTAINER_NAME) $(DOCKER_IMAGE_NAME)
 	@echo "Docker container started successfully."
 
-.PHONY: copy
-copy:
-	@echo "Copying the binary output from Docker container..."
-	docker cp $(DOCKER_CONTAINER_NAME):$(OUTPUT_BINARY_PATH) $(LOCAL_OUTPUT_PATH)
-	@echo "Binary output copied successfully to $(LOCAL_OUTPUT_PATH)."
 
 .PHONY: clean
 clean:
@@ -47,13 +34,5 @@ clean:
 
 .PHONY: test
 test:
-	@echo "Testing the code by running the Docker container..."
 	docker run -it --name $(DOCKER_CONTAINER_NAME) $(DOCKER_IMAGE_NAME)
-	@echo "Docker container ran successfully for testing."
-
-.PHONY: full-build
-full-build: build run copy clean
-
-.PHONY: rebuild-test
-rebuild-test: clean build test
 
