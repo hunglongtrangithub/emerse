@@ -2,7 +2,7 @@ from bs4 import BeautifulSoup
 from jinja2 import Environment, FileSystemLoader
 
 from .config import logger, BATCH_SIZE
-from .models import Prediction, predict
+from .models import Prediction, model_registry
 
 # Load the Jinja2 environment
 template_dir = "./templates"
@@ -75,7 +75,7 @@ def get_reports_with_table(reports: list[dict[str, str]]) -> list[dict[str, str]
         batch_texts = valid_texts[start:end]
         batch_reports = valid_reports[start:end]
 
-        batch_predictions = predict(batch_texts)
+        batch_predictions = model_registry.predict(batch_texts)
 
         for i, (report, report_text) in enumerate(zip(batch_reports, batch_texts)):
             report_html = generate_html_report(report_text, batch_predictions, i)

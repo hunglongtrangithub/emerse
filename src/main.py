@@ -8,7 +8,7 @@ import torch
 from flask import Flask, jsonify, request
 from healthcheck import EnvironmentDump, HealthCheck
 
-from .models import load_models
+from .models import model_registry
 from .process_report import get_reports_with_table
 from .config import logger, MODE, DEBUG, setup_testing_s3
 
@@ -20,23 +20,20 @@ health = HealthCheck()
 envdump = EnvironmentDump()
 
 
-def models_loaded():
+def models_healthy():
     try:
-        for model_variable in [
-            "tokenizer_pat",
-            "model_pat",
-            "tokenizer_lat",
-            "model_lat",
-            "tokenizer_gra",
-            "model_gra",
-            "tokenizer_lym",
-            "model_lym",
+        if not model_registry.models_loaded:
+            return False, "Models are not loaded"
+        for model_config in [
+            model_registry.pat,
+            model_registry.lat,
+            model_registry.gra,
+            model_registry.lym,
         ]:
-            if model_variable not in globals():
-                return False, f"Model {model_variable} is not loaded"
-            return True, "All models loaded successfully"
-        else:
-            return False, "One or more models are not loaded"
+            is_healthy, message = model_registry.check_model_health(model_config)
+            if not is_healthy:
+                return False, f"Issue in {model_config.name}: {message}"
+            return True, "All models are healthy"
     except Exception as e:
         return False, str(e)
 
@@ -62,7 +59,7 @@ def s3_accessible():
         return False, str(e)
 
 
-health.add_check(models_loaded)
+health.add_check(models_healthy)
 health.add_check(cuda_available)
 health.add_check(s3_accessible)
 
@@ -257,7 +254,8 @@ def main():
     logger.info("Starting NLP application...")
     try:
         logger.info("Loading models...")
-        load_models()
+        model_registry.load_models()
+        logger.info("Models loaded successfully")
     except Exception as e:
         logger.error(f"Error in loading models: {e}")
         return
