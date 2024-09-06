@@ -24,7 +24,7 @@ RUN update-alternatives --install /usr/bin/python python /usr/bin/python${PYTHON
 
 WORKDIR /app
 
-COPY ./pyproject.toml ./uv.lock ./.env ./
+COPY ./pyproject.toml ./uv.lock ./
 RUN uv sync --frozen --no-cache
 
 COPY ./templates/ ./templates/
