@@ -34,5 +34,5 @@ clean:
 
 .PHONY: test
 test:
-	docker run -it --name $(DOCKER_CONTAINER_NAME) $(DOCKER_IMAGE_NAME)
+	docker run -it --name $(DOCKER_CONTAINER_NAME) $(DOCKER_IMAGE_NAME) /bin/bash
 
