@@ -1,0 +1,13 @@
+version: "3.8"
+services:
+  myapp:
+    image: build_emerse_app:latest
+    env_file:
+      - ./.env  # Specify the relative path to the .env file
+    volumes:
+      - ./models:/app/models
+      - ./input:/app/input
+      - ./output:/app/ouput
+    ports:
+      - "5001:5000"
+
