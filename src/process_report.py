@@ -1,7 +1,7 @@
 from bs4 import BeautifulSoup
 from jinja2 import Environment, FileSystemLoader
 
-from .config import logger, BATCH_SIZE
+from .config import logger, BATCH_SIZE, REPORT_TEXT_COLUMN
 from .models import Prediction, model_registry
 
 # Load the Jinja2 environment
@@ -38,10 +38,10 @@ def generate_html_report(
 
 
 def is_valid_report(report: dict[str, str]) -> tuple[dict[str, str], str] | None:
-    if "RPT_TEXT" not in report:
-        logger.error("RPT_TEXT not found in report.")
+    if REPORT_TEXT_COLUMN not in report:
+        logger.error(f"{REPORT_TEXT_COLUMN} key not found in report.")
         return None
-    soup = BeautifulSoup(report["RPT_TEXT"], "html.parser")
+    soup = BeautifulSoup(report[REPORT_TEXT_COLUMN], "html.parser")
     if soup.body is None:
         logger.error("No body tag found in the report.")
         return None
@@ -79,8 +79,8 @@ def get_reports_with_table(reports: list[dict[str, str]]) -> list[dict[str, str]
 
         for i, (report, report_text) in enumerate(zip(batch_reports, batch_texts)):
             report_html = generate_html_report(report_text, batch_predictions, i)
-            # Update the original report with the new HTML content
-            report["RPT_TEXT"] = report_html
+            # Add the HTML table to the report json object
+            report[REPORT_TEXT_COLUMN] = report_html
 
         logger.debug(f"Predicted {len(batch_reports)}/{len(valid_reports)} reports")
 

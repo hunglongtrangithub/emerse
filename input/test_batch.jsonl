@@ -1,0 +1,10 @@
+{"ID": "1", "RPT_TEXT": "<html><body>Some medical report</body></html>\n"}
+{"ID": "2", "RPT_TEXT": "<html><body>N/A</body></html>\n"}
+{"ID": "3", "RPT_TEXT": "<html><body>Some other medical report</body></html>\n"}
+{"test": "test"}
+{"test": "test", "RPT_TEXT": "\n"}
+{"test": "test", "RPT_TEXT": "<html>N/A</html>\n"}
+{"test": "test", "RPT_TEXT": "<html><body></body></html>\n"}
+{"ID": "1", "RPT_TEXT": "<html><body>Some medical report</body></html>\n"}
+{"ID": "2", "RPT_TEXT": "<html><body>N/A</body></html>\n"}
+{"ID": "3", "RPT_TEXT": "<html><body>Some other medical report</body></html>\n"}

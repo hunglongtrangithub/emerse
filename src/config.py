@@ -16,6 +16,8 @@ MODE = os.getenv("MODE", "development")
 MAX_LENGTH = int(os.getenv("MAX_LENGTH", 4096))
 # Batch size for prediction
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", 32))
+# JSON key for the report text
+REPORT_TEXT_COLUMN = os.getenv("REPORT_TEXT_COLUMN", "RPT_TEXT")
 
 # Configure Loguru based on MODE
 if MODE == "production":
@@ -45,14 +47,14 @@ def setup_testing_s3():
 
         # Add some test objects
         s3.Bucket(bucket_name).put_object(
-            Key="test_file_1.json", Body='[{"key": "value1"}, {"key": "value1"}]'
+            Key="test_file_1.jsonl", Body='{"key": "value1"}\n{"key": "value1"}'
         )
         s3.Bucket(bucket_name).put_object(
-            Key="test_file_2.json", Body='[{"key": "value2"}, {"key": "value2"}]'
+            Key="test_file_2.jsonl", Body='{"key": "value2"}\n{"key": "value2"}'
         )
-        test_file = "test_batch.json"
+        test_file = "test_batch.jsonl"
         file_content = open(f"./input/{test_file}").read()
-        s3.Bucket(bucket_name).put_object(Key="test_batch.json", Body=file_content)
+        s3.Bucket(bucket_name).put_object(Key="test_batch.jsonl", Body=file_content)
         logger.info(f"Mock S3 bucket '{bucket_name}' created with test objects.")
 
     # Execute the mock setup

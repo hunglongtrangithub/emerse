@@ -10,7 +10,7 @@ from healthcheck import EnvironmentDump, HealthCheck
 
 from .models import model_registry
 from .process_report import get_reports_with_table
-from .config import logger, MODE, DEBUG, setup_testing_s3
+from .config import logger, setup_testing_s3, MODE, DEBUG, REPORT_TEXT_COLUMN
 
 
 app = Flask(__name__)
@@ -107,6 +107,37 @@ def hello_world():
     return jsonify({"body": "Hello World"}), 200
 
 
+def get_json_objects(file_content: str) -> list[dict[str, str]]:
+    # Split the file content into lines
+    lines = file_content.splitlines()
+
+    # Initialize a list to hold parsed JSON objects
+    json_objects = []
+
+    for i, line in enumerate(lines):
+        # Strip trailing commas and whitespace from each line
+        line = line.rstrip(",").strip()
+
+        # Parse each line as JSON and append it to the list
+        if line:  # Make sure the line is not empty
+            try:
+                json_obj = json.loads(line)
+                json_objects.append(json_obj)
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to decode JSON from line {i + 1}: {e}")
+                continue
+    if not json_objects:
+        raise json.JSONDecodeError("No valid JSON objects found", file_content, 0)
+    return json_objects
+
+
+def to_json_lines(reports: list[dict[str, str]]) -> str:
+    json_lines = "\n".join(
+        json.dumps(report, separators=(",", ":")) for report in reports
+    )
+    return json_lines
+
+
 def process_report_files(file_loader, file_saver, test=False):
     count = 0
     for file_id, json_input in file_loader():
@@ -128,72 +159,82 @@ def process_report_files(file_loader, file_saver, test=False):
 
         count += len(reports)
         logger.info(
-            f"{file_id}: Done predicting new reports. Number of processed reports: {count}"
+            f"{file_id}: Done predicting new reports. Number of processed reports so far: {count}"
         )
 
         file_saver(file_id, reports)
     return count
 
 
-def load_files_from_directory(input_directory):
-    input_directory = Path(input_directory)
-    if not input_directory.exists():
-        raise FileNotFoundError(f"Input directory '{input_directory}' not found.")
+def load_files_from_directory(input_directory: str):
+    input_dir = Path(input_directory)
+    if not input_dir.exists():
+        raise FileNotFoundError(f"Input directory '{input_dir}' not found.")
 
-    filepaths = input_directory.glob("*.json")
+    filepaths = input_dir.glob("*.jsonl")
     for filepath in filepaths:
+        logger.info(f"Reading file: {filepath}")
         try:
             with open(filepath, "r") as file:
-                yield filepath.name, json.load(file)
+                file_content = file.read()
+                yield filepath.name, get_json_objects(file_content)
         except json.JSONDecodeError as e:
             logger.error(f"Failed to decode JSON from {filepath}: {e}")
             continue
 
 
-def save_files_to_directory(output_directory, filepath, reports):
-    output_directory = Path(output_directory)
-    output_directory.mkdir(exist_ok=True)
+def save_files_to_directory(
+    output_directory: str, filepath: str, reports: list[dict[str, str]]
+):
+    output_dir = Path(output_directory)
+    output_dir.mkdir(exist_ok=True)
 
-    fileout = output_directory / filepath
+    fileout = output_dir / filepath
     logger.info(f"Writing JSON to file: {fileout}")
     with fileout.open("w") as file:
-        json.dump(reports, file, indent=4)
+        file.write(to_json_lines(reports))
 
-    html_out = output_directory / (fileout.stem + ".html")
+    html_out = output_dir / (fileout.stem + ".html")
     for report in reports:
-        if "RPT_TEXT" in report:
+        if REPORT_TEXT_COLUMN in report:
             logger.info(f"Writing HTML to file: {html_out}")
             with html_out.open("w") as file:
-                file.write(report["RPT_TEXT"])
+                file.write(report[REPORT_TEXT_COLUMN])
             break
 
 
-def load_files_from_s3(bucket_name):
+def load_files_from_s3(bucket_name: str, prefix: str = ""):
     s3 = boto3.resource("s3")
-    logger.info(f"Reading files from bucket: {bucket_name}")
+    logger.info(f"Reading files. Bucket: {bucket_name} | Prefix: {prefix}")
     bucket = s3.Bucket(bucket_name)
-    objects_list = bucket.objects.all()
+    objects_list = bucket.objects.filter(Prefix=prefix)
 
     for obj in objects_list:
         obj_key = obj.key
+        if obj_key.endswith("/"):
+            logger.info(f"Skipping directory: {obj_key}")
+            continue
+        logger.info(f"Reading object: {obj_key}")
         obj_body = obj.get()["Body"].read().decode("utf-8")
-        logger.debug(f"Reading object: {obj_key}. Content: {obj_body[:100]}")
         try:
-            yield obj_key, json.loads(obj_body)
+            yield obj_key, get_json_objects(obj_body)
         except json.JSONDecodeError as e:
             logger.error(f"Failed to decode JSON from {obj_key}: {e}")
             continue
 
 
-def save_files_to_s3(bucket_name, obj_key, reports):
+def save_files_to_s3(
+    bucket_name: str, output_prefix: str, obj_key: str, reports: list[dict[str, str]]
+):
     s3 = boto3.resource("s3")
     bucket = s3.Bucket(bucket_name)
 
-    updated_json = json.dumps(reports, indent=4).encode("utf-8")
-    logger.info(f"Saving JSON to S3 with key: {obj_key}")
+    updated_json = to_json_lines(reports).encode("utf-8")
+    new_key = output_prefix + obj_key.split("/")[-1]
+    logger.info(f"Saving JSON to S3 with key: {new_key}")
     bucket.put_object(
         Body=updated_json,
-        Key=obj_key,
+        Key=new_key,
     )
 
 
@@ -215,11 +256,15 @@ def predict_test():
 @app.route("/predict", methods=["GET"])
 def process_files():
     s3_bucket_name = os.getenv("S3_BUCKET_NAME")
+    if not s3_bucket_name:
+        return jsonify({"error": "S3_BUCKET_NAME environment variable is not set"}), 500
+    input_prefix = request.args.get("input_prefix", "")
+    output_prefix = request.args.get("output_prefix", "output/")
     try:
         count = process_report_files(
-            file_loader=lambda: load_files_from_s3(s3_bucket_name),
+            file_loader=lambda: load_files_from_s3(s3_bucket_name, input_prefix),
             file_saver=lambda obj_key, reports: save_files_to_s3(
-                s3_bucket_name, obj_key, reports
+                s3_bucket_name, output_prefix, obj_key, reports
             ),
         )
         return jsonify({"processed reports count": count}), 200
@@ -231,11 +276,12 @@ def process_files():
 @app.route("/list_s3_bucket", methods=["GET"])
 def list_s3_bucket():
     bucket_name = os.getenv("S3_BUCKET_NAME")
+    max_count = int(request.args.get("max_count", 10))
     if not bucket_name:
         return jsonify({"error": "S3_BUCKET_NAME environment variable is not set"}), 500
     s3 = boto3.resource("s3")
     bucket = s3.Bucket(bucket_name)
-    objects = list(bucket.objects.all())
+    objects = list(bucket.objects.limit(max_count))
     return (
         jsonify(
             {
