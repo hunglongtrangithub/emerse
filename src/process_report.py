@@ -9,6 +9,53 @@ template_dir = "./templates"
 env = Environment(loader=FileSystemLoader(template_dir))
 template = env.get_template("report_template.html")
 
+COLOR_MAP = {
+    "Action": "#F7DC6F",  # Pale Yellow
+    "Assistant": "#BB8FCE",  # Purple
+    "Mobility": "#F0B27A",  # Light Orange
+    "Quantification": "#AED6F1",  # Light Cyan
+}
+
+
+def annotate_report_text(report_text, entity_indexes):
+    """
+    Annotates the report text with HTML tags and distinct colors based on entity types.
+
+    :param report_text: The original report text.
+    :param entity_indexes: A dictionary where keys are entity names and values are lists of
+                           tuples indicating the start and end positions of the entities.
+    :return: Annotated report text with HTML span tags for highlighting.
+    """
+    # Flatten and sort all entities by start position
+    all_entities = []
+    for entity_name, indexes in entity_indexes.items():
+        for start, end in indexes:
+            all_entities.append((start, end, entity_name))
+    all_entities.sort(key=lambda x: x[0])
+
+    # Annotate the text
+    annotated_text = ""
+    current_pos = 0
+    for start, end, entity_name in all_entities:
+        if current_pos < start:
+            annotated_text += report_text[
+                current_pos:start
+            ]  # Add text before the entity
+        color = COLOR_MAP.get(
+            entity_name, "#FFFFFF"
+        )  # Default to white if entity is not in COLOR_MAP
+        annotated_text += (
+            f'<span style="background-color: {color}; border-radius: 3px; padding: 2px;" title="{entity_name}">'
+            f"{report_text[start:end]} <b>[{entity_name}]</b>"
+            f"</span>"
+        )
+        current_pos = end
+    if current_pos < len(report_text):
+        annotated_text += report_text[
+            current_pos:
+        ]  # Add remaining text after the last entity
+    return annotated_text
+
 
 def generate_html_report(
     report_text: str,
@@ -35,13 +82,20 @@ def generate_html_report(
         for prediction in batch_predictions
     ]
     entity_indexes = {
-        entity_name: entity_indexes[index]
+        entity_name: [
+            (index_pair[0], index_pair[1])
+            for index_pair in entity_indexes[index].entity_indexes
+        ]
         for entity_name, entity_indexes in batch_entity_indexes.items()
     }
 
-    # Render the template with the report text and predictions data
+    # Annotate the report text
+    annotated_report_text = annotate_report_text(report_text, entity_indexes)
+
+    # Render the template with the annotated report text and predictions data
     html_content = template.render(
-        report_text=report_text, predictions=predictions, entity_indexes=entity_indexes
+        annotated_report_text=annotated_report_text,
+        predictions=predictions,
     )
     return html_content
 

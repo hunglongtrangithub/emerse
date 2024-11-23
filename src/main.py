@@ -12,8 +12,6 @@ from .models import ModelRegistry
 from .process_report import get_reports_with_table
 from .config import logger, setup_testing_s3, MODE, DEBUG, REPORT_TEXT_COLUMN
 
-model_registry = ModelRegistry("./models", "./saved_models")
-
 app = Flask(__name__)
 
 
@@ -291,6 +289,9 @@ def list_s3_bucket():
 
 
 def main():
+    global model_registry
+    model_registry = ModelRegistry("./models", "./saved_models")
+
     logger.info(f"Mode: {MODE}. Debug: {DEBUG}")
     logger.info("Starting NLP application...")
     try:

@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,48 +9,44 @@
             font-family: Arial, sans-serif;
             margin: 20px;
         }
-
         .report-section {
             margin-bottom: 40px;
         }
-
         h2 {
             margin-bottom: 10px;
             color: #333;
         }
-
         p {
             margin-bottom: 20px;
             line-height: 1.5;
         }
-
+        .highlight {
+            background-color: #ffdd57;
+            border-radius: 3px;
+            padding: 2px;
+        }
         table {
             width: 100%;
             border-collapse: collapse;
             margin-bottom: 20px;
         }
-
-        th,
-        td {
+        th, td {
             padding: 10px;
             border: 1px solid #ddd;
             text-align: left;
         }
-
         th {
             background-color: #f4f4f4;
         }
-
         td {
             background-color: #fff;
         }
     </style>
 </head>
-
 <body>
     <div class="report-section">
         <h2>Report Text</h2>
-        <p>{{ report_text }}</p>
+        <p>{{ annotated_report_text|safe }}</p>
         <h2>Predictions</h2>
         <table>
             <thead>
@@ -87,5 +82,4 @@
         </table>
     </div>
 </body>
-
 </html>

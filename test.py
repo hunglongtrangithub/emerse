@@ -4,8 +4,8 @@ import pytest
 import boto3
 from moto import mock_aws
 
-from src.models import ModelRegistry
-from src.process_report import get_reports_with_table
+from src.models import ModelRegistry, PathologyPrediction, MobilityPrediction
+from src.process_report import get_reports_with_table, generate_html_report
 from src.main import (
     s3_accessible,
     load_files_from_s3,
@@ -13,6 +13,144 @@ from src.main import (
     to_json_lines,
     get_json_objects,
 )
+
+
+def test_generate_html_report():
+    # Mock data for pathology predictions
+    batch_predictions = [
+        PathologyPrediction(
+            field="Pathology",
+            field_name="PAT",
+            value=["Malignant", "Benign"],
+            max_prob=[0.98, 0.95],
+        ),
+        PathologyPrediction(
+            field="Laterality",
+            field_name="LAT",
+            value=["Left", "Right"],
+            max_prob=[0.92, 0.88],
+        ),
+        PathologyPrediction(
+            field="Grade",
+            field_name="GRA",
+            value=["Grade 2", "Grade 3"],
+            max_prob=[0.96, 0.91],
+        ),
+        PathologyPrediction(
+            field="Lymph Node Metastasis",
+            field_name="LYM",
+            value=["Positive", "Negative"],
+            max_prob=[0.85, 0.89],
+        ),
+    ]
+
+    # Mock data for mobility predictions
+    batch_entity_indexes = {
+        "Action": [
+            MobilityPrediction(
+                tokenized_input=["Patient", "was", "walking", "slowly", "."],
+                output_tags=["O", "O", "B-Action", "I-Action", "O"],
+                entity_indexes=[
+                    [16, 31]
+                ],  # Start and end positions for "walking slowly"
+                extracted_entities=["walking slowly"],
+            ),
+            MobilityPrediction(
+                tokenized_input=["The", "subject", "ran", "quickly", "."],
+                output_tags=["O", "O", "B-Action", "I-Action", "O"],
+                entity_indexes=[[10, 23]],  # Start and end positions for "ran quickly"
+                extracted_entities=["ran quickly"],
+            ),
+        ],
+        "Assistant": [
+            MobilityPrediction(
+                tokenized_input=["The", "nurse", "helped", "the", "patient", "."],
+                output_tags=["O", "B-Assistant", "I-Assistant", "O", "O", "O"],
+                entity_indexes=[[4, 17]],  # Start and end positions for "nurse helped"
+                extracted_entities=["nurse helped"],
+            ),
+            MobilityPrediction(
+                tokenized_input=["Doctor", "provided", "assistance", "."],
+                output_tags=["B-Assistant", "I-Assistant", "I-Assistant", "O"],
+                entity_indexes=[
+                    [0, 25]
+                ],  # Start and end positions for "Doctor provided assistance"
+                extracted_entities=["Doctor provided assistance"],
+            ),
+        ],
+        "Mobility": [
+            MobilityPrediction(
+                tokenized_input=["Patient", "can", "move", "independently", "."],
+                output_tags=["O", "O", "B-Mobility", "I-Mobility", "O"],
+                entity_indexes=[
+                    [11, 33]
+                ],  # Start and end positions for "move independently"
+                extracted_entities=["move independently"],
+            ),
+            MobilityPrediction(
+                tokenized_input=["Subject", "needs", "assistance", "to", "stand", "."],
+                output_tags=["O", "O", "B-Mobility", "O", "I-Mobility", "O"],
+                entity_indexes=[
+                    [12, 28]
+                ],  # Start and end positions for "assistance to stand"
+                extracted_entities=["assistance to stand"],
+            ),
+        ],
+        "Quantification": [
+            MobilityPrediction(
+                tokenized_input=[
+                    "The",
+                    "subject",
+                    "walked",
+                    "for",
+                    "10",
+                    "meters",
+                    ".",
+                ],
+                output_tags=[
+                    "O",
+                    "O",
+                    "O",
+                    "O",
+                    "B-Quantification",
+                    "I-Quantification",
+                    "O",
+                ],
+                entity_indexes=[[27, 37]],  # Start and end positions for "10 meters"
+                extracted_entities=["10 meters"],
+            ),
+            MobilityPrediction(
+                tokenized_input=["Patient", "ran", "for", "5", "minutes", "."],
+                output_tags=[
+                    "O",
+                    "O",
+                    "O",
+                    "B-Quantification",
+                    "I-Quantification",
+                    "O",
+                ],
+                entity_indexes=[[19, 30]],  # Start and end positions for "5 minutes"
+                extracted_entities=["5 minutes"],
+            ),
+        ],
+    }
+
+    # Mock report text
+    report_text = """
+    The pathology report indicates a malignant tumor on the left side with Grade 2 classification.
+    Additionally, there is evidence of lymph node metastasis. The patient walked slowly but needs assistance.
+    """
+
+    # Mock index
+    index = 0  # Generate the HTML report
+    html_content = generate_html_report(
+        report_text, index, batch_predictions, batch_entity_indexes
+    )
+
+    with open("output/test_generate_html_report.html", "w") as f:
+        f.write(html_content)
+
+    print("HTML report generated successfully")
 
 
 @pytest.fixture(scope="function")
