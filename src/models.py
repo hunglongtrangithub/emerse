@@ -318,16 +318,14 @@ class MobilityModelRegistry:
 
     def extract_entity_indexes(
         self, report_texts: list[str]
-    ) -> list[list[MobilityPrediction]]:
+    ) -> dict[str, list[MobilityPrediction]]:
         if self.models is None:
             logger.info("Models are not loaded. Please load models first.")
-            return []
-        return [
-            self.model_extract_entity_indexes(report_texts, self.models.action),
-            self.model_extract_entity_indexes(report_texts, self.models.mobility),
-            self.model_extract_entity_indexes(report_texts, self.models.assistant),
-            self.model_extract_entity_indexes(report_texts, self.models.quantification),
-        ]
+            return {}
+        return {
+            model_name: self.model_extract_entity_indexes(report_texts, model_config)
+            for model_name, model_config in self.models.model_dump().items()
+        }
 
 
 class ModelRegistry:

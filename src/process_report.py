@@ -2,7 +2,7 @@ from bs4 import BeautifulSoup
 from jinja2 import Environment, FileSystemLoader
 
 from .config import logger, BATCH_SIZE, REPORT_TEXT_COLUMN
-from .models import ModelRegistry, PathologyPrediction
+from .models import ModelRegistry, PathologyPrediction, MobilityPrediction
 
 # Load the Jinja2 environment
 template_dir = "./templates"
@@ -11,7 +11,10 @@ template = env.get_template("report_template.html")
 
 
 def generate_html_report(
-    report_text: str, batch_predictions: list[PathologyPrediction], index: int
+    report_text: str,
+    index: int,
+    batch_predictions: list[PathologyPrediction],
+    batch_entity_indexes: dict[str, list[MobilityPrediction]],
 ):
     """
     Generate an HTML report based on the report text and batch predictions for a specific index.
@@ -31,9 +34,15 @@ def generate_html_report(
         }
         for prediction in batch_predictions
     ]
+    entity_indexes = {
+        entity_name: entity_indexes[index]
+        for entity_name, entity_indexes in batch_entity_indexes.items()
+    }
 
     # Render the template with the report text and predictions data
-    html_content = template.render(report_text=report_text, predictions=predictions)
+    html_content = template.render(
+        report_text=report_text, predictions=predictions, entity_indexes=entity_indexes
+    )
     return html_content
 
 
@@ -77,10 +86,14 @@ def get_reports_with_table(
         batch_texts = valid_texts[start:end]
         batch_reports = valid_reports[start:end]
 
-        batch_predictions = model_registry.predict(batch_texts)
-
+        batch_predictions = model_registry.pathology_registry.predict(batch_texts)
+        batch_entity_indexes = model_registry.mobility_registry.extract_entity_indexes(
+            batch_texts
+        )
         for i, (report, report_text) in enumerate(zip(batch_reports, batch_texts)):
-            report_html = generate_html_report(report_text, batch_predictions, i)
+            report_html = generate_html_report(
+                report_text, i, batch_predictions, batch_entity_indexes
+            )
             # Add the HTML table to the report json object
             report[REPORT_TEXT_COLUMN] = report_html
 
