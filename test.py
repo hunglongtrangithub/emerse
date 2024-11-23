@@ -1,11 +1,10 @@
 import os
-import json
 
 import pytest
 import boto3
 from moto import mock_aws
 
-from src.models import model_registry
+from src.models import ModelRegistry
 from src.process_report import get_reports_with_table
 from src.main import (
     s3_accessible,
@@ -38,9 +37,10 @@ def mocked_aws(aws_credentials):
 
 
 def test_batch():
+    model_registry = ModelRegistry("./models", "./saved_models")
     model_registry.load_models()
     reports = get_json_objects(open("input/test_batch.jsonl").read())
-    reports = get_reports_with_table(reports)
+    reports = get_reports_with_table(reports, model_registry)
     with open("output/test_batch.jsonl", "w") as f:
         f.write(to_json_lines(reports))
 

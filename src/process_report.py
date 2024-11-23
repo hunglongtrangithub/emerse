@@ -2,7 +2,7 @@ from bs4 import BeautifulSoup
 from jinja2 import Environment, FileSystemLoader
 
 from .config import logger, BATCH_SIZE, REPORT_TEXT_COLUMN
-from .models import Prediction, model_registry
+from .models import ModelRegistry, PathologyPrediction
 
 # Load the Jinja2 environment
 template_dir = "./templates"
@@ -11,7 +11,7 @@ template = env.get_template("report_template.html")
 
 
 def generate_html_report(
-    report_text: str, batch_predictions: list[Prediction], index: int
+    report_text: str, batch_predictions: list[PathologyPrediction], index: int
 ):
     """
     Generate an HTML report based on the report text and batch predictions for a specific index.
@@ -52,7 +52,9 @@ def is_valid_report(report: dict[str, str]) -> tuple[dict[str, str], str] | None
     return report, report_text
 
 
-def get_reports_with_table(reports: list[dict[str, str]]) -> list[dict[str, str]]:
+def get_reports_with_table(
+    reports: list[dict[str, str]], model_registry: ModelRegistry
+) -> list[dict[str, str]]:
     """
     Find valid reports, predict the values, and add the predictions to the report as a table.
     Mutate the original reports and return them.

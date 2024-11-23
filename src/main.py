@@ -8,10 +8,11 @@ import torch
 from flask import Flask, jsonify, request
 from healthcheck import EnvironmentDump, HealthCheck
 
-from .models import model_registry
+from .models import ModelRegistry
 from .process_report import get_reports_with_table
 from .config import logger, setup_testing_s3, MODE, DEBUG, REPORT_TEXT_COLUMN
 
+model_registry = ModelRegistry("./models", "./saved_models")
 
 app = Flask(__name__)
 
@@ -24,16 +25,10 @@ def models_healthy():
     try:
         if not model_registry.models_loaded:
             return False, "Models are not loaded"
-        for model_config in [
-            model_registry.pat,
-            model_registry.lat,
-            model_registry.gra,
-            model_registry.lym,
-        ]:
-            is_healthy, message = model_registry.check_model_health(model_config)
-            if not is_healthy:
-                return False, f"Issue in {model_config.name}: {message}"
-            return True, "All models are healthy"
+        is_healthy, messages = model_registry.check_all_models_health()
+        if not is_healthy:
+            return False, "\n".join(messages)
+        return True, "All models are healthy"
     except Exception as e:
         return False, str(e)
 
@@ -152,7 +147,7 @@ def process_report_files(file_loader, file_saver, test=False):
         try:
             if test:
                 json_input = json_input[:5]
-            reports = get_reports_with_table(json_input)
+            reports = get_reports_with_table(json_input, model_registry)
         except Exception as e:
             logger.error(f"Error in processing reports from {file_id}: {e}")
             continue
