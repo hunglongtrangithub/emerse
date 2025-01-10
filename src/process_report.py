@@ -72,6 +72,69 @@ def generate_mobility_html_report(
     return html_content
 
 
+def generate_mobility_document_with_entities(
+    report_text: str,
+    index: int,
+    batch_entity_indexes: dict[str, list[MobilityPrediction]],
+) -> str:
+    """
+    Generate a file string for the mobility document with entities compliant with the EMERSE NLP format.
+
+    Args:
+        report_text: The text of the report.
+        index: The index of the current report in the batch.
+        batch_entity_indexes: A dictionary mapping entity types to their respective MobilityPrediction lists.
+
+    Returns:
+        A formatted string compliant with the EMERSE NLP pipeline.
+    """
+    # Prepare the entities section
+    entity_indexes = {
+        entity_name: [
+            (index_pair[0], index_pair[1])
+            for index_pair in entity_indexes[index].entity_indexes
+        ]
+        for entity_name, entity_indexes in batch_entity_indexes.items()
+    }
+    entities = prepare_entities(entity_indexes)
+
+    # Header row (hardcoded example values for newline and space counts, and a separator)
+    separator = "THIS_IS_A_SEPARATOR"
+    header_row = f"RU1FUlNFX0g=1|5|{separator}"
+
+    # NLP artifacts section
+    cui_code = 2371377
+    artifact_lines = []
+    for entity in entities:
+        start_offset = entity["start"]
+        end_offset = entity["end"]
+        match entity["type"]:
+            case "action":
+                artifact_id = f"CUI_{cui_code}_a"
+            case "quantification":
+                artifact_id = f"CUI_{cui_code}_q"
+            case "assistance":
+                artifact_id = f"CUI_{cui_code}_s"
+            case _:
+                raise ValueError(f"Invalid entity type: {entity['type']}")
+        artifact_type = "R"  # All entities are "R" for "Entity"
+        artifact_lines.append(
+            f"{start_offset}\t{end_offset}\t{artifact_id}\t{artifact_type}"
+        )
+
+    # Combine the artifact lines into a single string
+    artifacts_section = "\n".join(artifact_lines)
+
+    # Original document section
+    document_section = report_text.strip()
+
+    # Combine all sections into the final document
+    emerse_document = (
+        f"{header_row}\n{artifacts_section}\n{separator}\n{document_section}"
+    )
+    return emerse_document
+
+
 def is_valid_report(report: dict[str, str]) -> tuple[dict[str, str], str] | None:
     if REPORT_TEXT_COLUMN not in report:
         logger.error(f"{REPORT_TEXT_COLUMN} key not found in report.")
@@ -157,6 +220,14 @@ def process_reports(
                     batch_entity_indexes,
                 )
                 report[REPORT_TEXT_COLUMN] = report_html
+
+                report_doc = generate_mobility_document_with_entities(
+                    report_text,
+                    report_index,
+                    batch_entity_indexes,
+                )
+                # TODO: Consult with the EMERSE team to determine the correct key for the document
+                report["PRT_DOC"] = report_doc
 
         logger.debug(f"Processed {len(batch_reports)}/{len(valid_reports)} reports")
 
