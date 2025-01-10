@@ -1,3 +1,4 @@
+from typing import Literal
 from bs4 import BeautifulSoup
 from jinja2 import Environment, FileSystemLoader
 
@@ -7,71 +8,29 @@ from .models import ModelRegistry, PathologyPrediction, MobilityPrediction
 # Load the Jinja2 environment
 template_dir = "./templates"
 env = Environment(loader=FileSystemLoader(template_dir))
-template = env.get_template("report_template.html")
-
-COLOR_MAP = {
-    "Action": "#F7DC6F",  # Pale Yellow
-    "Assistant": "#BB8FCE",  # Purple
-    "Mobility": "#F0B27A",  # Light Orange
-    "Quantification": "#AED6F1",  # Light Cyan
-}
+pathology_template = env.get_template("pathology_template.html")
+mobility_template = env.get_template("mobility_template.html")
 
 
-def annotate_report_text(report_text, entity_indexes):
+def prepare_entities(entity_indexes: dict[str, list[tuple[int, int]]]) -> list[dict]:
     """
-    Annotates the report text with HTML tags and distinct colors based on entity types.
-
-    :param report_text: The original report text.
-    :param entity_indexes: A dictionary where keys are entity names and values are lists of
-                           tuples indicating the start and end positions of the entities.
-    :return: Annotated report text with HTML span tags for highlighting.
+    Prepares a flat, sorted list of entities for the mobility template.
     """
-    # Flatten and sort all entities by start position
-    all_entities = []
-    for entity_name, indexes in entity_indexes.items():
+    entities = []
+    for entity_type, indexes in entity_indexes.items():
         for start, end in indexes:
-            all_entities.append((start, end, entity_name))
-    all_entities.sort(key=lambda x: x[0])
-
-    # Annotate the text
-    annotated_text = ""
-    current_pos = 0
-    for start, end, entity_name in all_entities:
-        if current_pos < start:
-            annotated_text += report_text[
-                current_pos:start
-            ]  # Add text before the entity
-        color = COLOR_MAP.get(
-            entity_name, "#FFFFFF"
-        )  # Default to white if entity is not in COLOR_MAP
-        annotated_text += (
-            f'<span style="background-color: {color}; border-radius: 3px; padding: 2px;" title="{entity_name}">'
-            f"{report_text[start:end]} <b>[{entity_name}]</b>"
-            f"</span>"
-        )
-        current_pos = end
-    if current_pos < len(report_text):
-        annotated_text += report_text[
-            current_pos:
-        ]  # Add remaining text after the last entity
-    return annotated_text
+            entities.append({"start": start, "end": end, "type": entity_type})
+    return sorted(entities, key=lambda x: x["start"])
 
 
-def generate_html_report(
+def generate_pathology_html_report(
     report_text: str,
     index: int,
     batch_predictions: list[PathologyPrediction],
-    batch_entity_indexes: dict[str, list[MobilityPrediction]],
-):
+) -> str:
     """
-    Generate an HTML report based on the report text and batch predictions for a specific index.
-
-    :param report_text: The text of the report.
-    :param batch_predictions: List of prediction dictionaries.
-    :param index: The index of the current item in the batch.
-    :return: A string containing the generated HTML.
+    Generate a pathology HTML report.
     """
-    # Prepare the data for the template
     predictions = [
         {
             "field_name": prediction.field_name,
@@ -81,6 +40,22 @@ def generate_html_report(
         }
         for prediction in batch_predictions
     ]
+
+    html_content = pathology_template.render(
+        report_text=report_text,
+        predictions=predictions,
+    )
+    return html_content
+
+
+def generate_mobility_html_report(
+    report_text: str,
+    index: int,
+    batch_entity_indexes: dict[str, list[MobilityPrediction]],
+) -> str:
+    """
+    Generate a mobility HTML report.
+    """
     entity_indexes = {
         entity_name: [
             (index_pair[0], index_pair[1])
@@ -88,14 +63,11 @@ def generate_html_report(
         ]
         for entity_name, entity_indexes in batch_entity_indexes.items()
     }
+    entities = prepare_entities(entity_indexes)
 
-    # Annotate the report text
-    annotated_report_text = annotate_report_text(report_text, entity_indexes)
-
-    # Render the template with the annotated report text and predictions data
-    html_content = template.render(
-        annotated_report_text=annotated_report_text,
-        predictions=predictions,
+    html_content = mobility_template.render(
+        report_text=report_text,
+        entities=entities,
     )
     return html_content
 
@@ -115,17 +87,30 @@ def is_valid_report(report: dict[str, str]) -> tuple[dict[str, str], str] | None
     return report, report_text
 
 
-def get_reports_with_table(
-    reports: list[dict[str, str]], model_registry: ModelRegistry
+PredictType = Literal["pathology", "mobility"]
+
+
+def process_reports(
+    reports: list[dict[str, str]],
+    model_registry: ModelRegistry,
+    predict_type: PredictType,
 ) -> list[dict[str, str]]:
     """
-    Find valid reports, predict the values, and add the predictions to the report as a table.
-    Mutate the original reports and return them.
-    Invalid reports are returned as is.
+    Process reports with either pathology predictions or mobility annotations based on predict_type.
+
+    Args:
+        reports: List of report dictionaries
+        model_registry: Model registry instance
+        predict_type: Type of prediction to perform ("pathology" or "mobility")
+        show_output: Whether to show predictions/annotations (defaults to True)
+
+    Returns:
+        List of processed reports with HTML content added
     """
     valid_reports = []
     valid_texts = []
 
+    # Validate reports
     for report in reports:
         report_data = is_valid_report(report)
         if report_data:
@@ -135,22 +120,44 @@ def get_reports_with_table(
 
     logger.info(f"Number of valid reports: {len(valid_reports)}")
 
+    # Process reports in batches
     for start in range(0, len(valid_reports), BATCH_SIZE):
         end = start + BATCH_SIZE
         batch_texts = valid_texts[start:end]
         batch_reports = valid_reports[start:end]
 
-        batch_predictions = model_registry.pathology_registry.predict(batch_texts)
-        batch_entity_indexes = model_registry.mobility_registry.extract_entity_indexes(
-            batch_texts
-        )
-        for i, (report, report_text) in enumerate(zip(batch_reports, batch_texts)):
-            report_html = generate_html_report(
-                report_text, i, batch_predictions, batch_entity_indexes
-            )
-            # Add the HTML table to the report json object
-            report[REPORT_TEXT_COLUMN] = report_html
+        if predict_type == "pathology":
+            # Get pathology predictions
+            batch_predictions = model_registry.pathology_registry.predict(batch_texts)
 
-        logger.debug(f"Predicted {len(batch_reports)}/{len(valid_reports)} reports")
+            # Generate HTML reports
+            for report_index, (report, report_text) in enumerate(
+                zip(batch_reports, batch_texts)
+            ):
+                report_html = generate_pathology_html_report(
+                    report_text,
+                    report_index,
+                    batch_predictions,
+                )
+                report[REPORT_TEXT_COLUMN] = report_html
+
+        elif predict_type == "mobility":
+            # Get mobility annotations
+            batch_entity_indexes = (
+                model_registry.mobility_registry.extract_entity_indexes(batch_texts)
+            )
+
+            # Generate HTML reports
+            for report_index, (report, report_text) in enumerate(
+                zip(batch_reports, batch_texts)
+            ):
+                report_html = generate_mobility_html_report(
+                    report_text,
+                    report_index,
+                    batch_entity_indexes,
+                )
+                report[REPORT_TEXT_COLUMN] = report_html
+
+        logger.debug(f"Processed {len(batch_reports)}/{len(valid_reports)} reports")
 
     return reports

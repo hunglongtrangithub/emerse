@@ -9,7 +9,7 @@ from flask import Flask, jsonify, request
 from healthcheck import EnvironmentDump, HealthCheck
 
 from .models import ModelRegistry
-from .process_report import get_reports_with_table
+from .process_report import process_reports
 from .config import logger, setup_testing_s3, MODE, DEBUG, REPORT_TEXT_COLUMN
 
 app = Flask(__name__)
@@ -131,7 +131,7 @@ def to_json_lines(reports: list[dict[str, str]]) -> str:
     return json_lines
 
 
-def process_report_files(file_loader, file_saver, test=False):
+def process_report_files(file_loader, file_saver, predict_type, test=False):
     count = 0
     for file_id, json_input in file_loader():
         logger.info(f"Processing file: {file_id}")
@@ -145,7 +145,7 @@ def process_report_files(file_loader, file_saver, test=False):
         try:
             if test:
                 json_input = json_input[:5]
-            reports = get_reports_with_table(json_input, model_registry)
+            reports = process_reports(json_input, model_registry, predict_type)
         except Exception as e:
             logger.error(f"Error in processing reports from {file_id}: {e}")
             continue
@@ -233,12 +233,16 @@ def save_files_to_s3(
 
 @app.route("/predict_test", methods=["GET"])
 def predict_test():
+    predict_type = request.args.get("predict_type")
+    if predict_type is None:
+        return jsonify({"error": "predict_type parameter is required"}), 400
     try:
         count = process_report_files(
             file_loader=lambda: load_files_from_directory("./input"),
             file_saver=lambda filepath, reports: save_files_to_directory(
                 "./output", filepath, reports
             ),
+            predict_type=predict_type,
             test=True,
         )
         return jsonify({"processed reports count": count}), 200
@@ -253,12 +257,16 @@ def process_files():
         return jsonify({"error": "S3_BUCKET_NAME environment variable is not set"}), 500
     input_prefix = request.args.get("input_prefix", "")
     output_prefix = request.args.get("output_prefix", "output/")
+    predict_type = request.args.get("predict_type")
+    if predict_type is None:
+        return jsonify({"error": "predict_type parameter is required"}), 400
     try:
         count = process_report_files(
             file_loader=lambda: load_files_from_s3(s3_bucket_name, input_prefix),
             file_saver=lambda obj_key, reports: save_files_to_s3(
                 s3_bucket_name, output_prefix, obj_key, reports
             ),
+            predict_type=predict_type,
         )
         return jsonify({"processed reports count": count}), 200
     except Exception as e:

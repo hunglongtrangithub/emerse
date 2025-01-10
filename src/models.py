@@ -253,9 +253,9 @@ class MobilityModelRegistry:
         """
         results = []
 
-        for sentence in input_texts:
+        for text in input_texts:
             encoding = model_config.tokenizer(
-                sentence, return_tensors="pt", truncation=True, padding=True
+                text, return_tensors="pt", truncation=True, padding=True
             )
             input_ids = encoding["input_ids"].to(self.device)
             outputs = model_config.model(input_ids)
@@ -279,8 +279,8 @@ class MobilityModelRegistry:
                     char_offset = token_char_positions[-1][1]
                 else:
                     if token not in ["[PAD]", "[CLS]", "[SEP]"]:
-                        # Find the start and end position in the original sentence
-                        while sentence[char_offset] == " ":
+                        # Find the start and end position in the original text
+                        while text[char_offset] == " ":
                             char_offset += 1  # Skip any spaces
 
                         start_position = char_offset
@@ -302,14 +302,14 @@ class MobilityModelRegistry:
                         1
                     ]  # Extend the end position
 
-            # Append results for this sentence
+            # Append results for this text
             results.append(
                 MobilityPrediction(
                     tokenized_input=new_tokens,
                     output_tags=output_tags,
                     entity_indexes=current_positions,
                     extracted_entities=[
-                        sentence[idx[0] : idx[1]] for idx in current_positions
+                        text[idx[0] : idx[1]] for idx in current_positions
                     ],
                 )
             )

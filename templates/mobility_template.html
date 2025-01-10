@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mobility Report</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+
+        .report-section {
+            margin-bottom: 40px;
+        }
+
+        h2 {
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        p {
+            margin-bottom: 20px;
+            line-height: 1.5;
+        }
+
+        .entity-Action {
+            background-color: #F7DC6F;
+        }
+
+        .entity-Assistant {
+            background-color: #BB8FCE;
+        }
+
+        .entity-Mobility {
+            background-color: #F0B27A;
+        }
+
+        .entity-Quantification {
+            background-color: #AED6F1;
+        }
+
+        .entity {
+            border-radius: 3px;
+            padding: 2px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="report-section">
+        <h2>Report Text</h2>
+        {% if show_annotations %}
+        <p>
+            {% set current_pos = 0 %}
+            {% for entity in entities %}
+            {{ report_text[current_pos:entity.start] }}
+            <span class="entity entity-{{ entity.type }}" title="{{ entity.type }}">
+                {{ report_text[entity.start:entity.end] }} <b>[{{ entity.type }}]</b>
+            </span>
+            {% set current_pos = entity.end %}
+            {% endfor %}
+            {{ report_text[current_pos:] }}
+        </p>
+        {% else %}
+        <p>{{ report_text }}</p>
+        {% endif %}
+    </div>
+</body>
+
+</html>
