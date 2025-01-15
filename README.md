@@ -1,4 +1,4 @@
-# Clinical NLP Pipeline for EMERSE Integration
+# EMERSE-integrated Clinical Text Annotation System
 
 This project provides a scalable and efficient pipeline for extracting insights from clinical documents using state-of-the-art NLP models. Designed to seamlessly integrate with the EMERSE medical search and visualization system, the pipeline enables automated document processing and transformation, making it easier for healthcare organizations to search, analyze, and utilize medical data.
 
