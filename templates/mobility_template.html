@@ -29,7 +29,7 @@
             background-color: #F7DC6F;
         }
 
-        .entity-Assistant {
+        .entity-Assistance {
             background-color: #BB8FCE;
         }
 
@@ -49,24 +49,22 @@
 </head>
 
 <body>
+    {% for entity_type, entity_list in entities.items() %}
     <div class="report-section">
-        <h2>Report Text</h2>
-        {% if show_annotations %}
+        <h2>{{ entity_type }} Entities</h2>
         <p>
-            {% set current_pos = 0 %}
-            {% for entity in entities %}
-            {{ report_text[current_pos:entity.start] }}
-            <span class="entity entity-{{ entity.type }}" title="{{ entity.type }}">
-                {{ report_text[entity.start:entity.end] }} <b>[{{ entity.type }}]</b>
-            </span>
-            {% set current_pos = entity.end %}
+            {% set state = namespace(current_pos=0) %}
+            {% for entity in entity_list %}
+                {{ report_text[state.current_pos:entity.start] }}
+                <span class="entity entity-{{ entity_type }}" title="{{ entity_type }}">
+                    {{ report_text[entity.start:entity.end] }} <b>[{{ entity_type }}]</b>
+                </span>
+                {% set state.current_pos = entity.end %}
             {% endfor %}
-            {{ report_text[current_pos:] }}
+            {{ report_text[state.current_pos:] }}
         </p>
-        {% else %}
-        <p>{{ report_text }}</p>
-        {% endif %}
     </div>
+    {% endfor %}
 </body>
 
 </html>

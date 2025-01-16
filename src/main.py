@@ -9,8 +9,8 @@ from flask import Flask, jsonify, request
 from healthcheck import EnvironmentDump, HealthCheck
 
 from .models import ModelRegistry
-from .process_report import process_reports
-from .config import logger, setup_testing_s3, MODE, DEBUG, REPORT_TEXT_COLUMN
+from .process_report import process_reports, PredictType
+from .config import logger, setup_testing_s3, MODE, DEBUG, PORT, REPORT_TEXT_COLUMN
 
 app = Flask(__name__)
 
@@ -131,31 +131,37 @@ def to_json_lines(reports: list[dict[str, str]]) -> str:
     return json_lines
 
 
-def process_report_files(file_loader, file_saver, predict_type, test=False):
+def process_report_files(
+    file_loader, file_saver, predict_type: PredictType, test=False
+):
     count = 0
-    for file_id, json_input in file_loader():
-        logger.info(f"Processing file: {file_id}")
+    for filepath, json_input in file_loader():
+        logger.info(f"Processing file: {filepath}")
 
         if not isinstance(json_input, list):
-            logger.error(f"Invalid JSON input in {file_id}. Must be a list of reports.")
+            logger.error(
+                f"Invalid JSON input in {filepath}. Must be a list of reports."
+            )
             continue
 
-        logger.info(f"Number of new reports in {file_id}: {len(json_input)}")
+        logger.info(f"Number of new reports in {filepath}: {len(json_input)}")
+
+        if test:
+            json_input = json_input[:5]
 
         try:
-            if test:
-                json_input = json_input[:5]
-            reports = process_reports(json_input, model_registry, predict_type)
+            with logger.catch(reraise=True):
+                reports = process_reports(json_input, model_registry, predict_type)
         except Exception as e:
-            logger.error(f"Error in processing reports from {file_id}: {e}")
+            logger.error(f"Error in processing reports from {filepath}: {e}")
             continue
 
         count += len(reports)
         logger.info(
-            f"{file_id}: Done predicting new reports. Number of processed reports so far: {count}"
+            f"{filepath}: Done predicting new reports. Number of processed reports so far: {count}"
         )
 
-        file_saver(file_id, reports)
+        file_saver(filepath, reports)
     return count
 
 
@@ -170,30 +176,30 @@ def load_files_from_directory(input_directory: str):
         try:
             with open(filepath, "r") as file:
                 file_content = file.read()
-                yield filepath.name, get_json_objects(file_content)
+                yield filepath, get_json_objects(file_content)
         except json.JSONDecodeError as e:
             logger.error(f"Failed to decode JSON from {filepath}: {e}")
             continue
 
 
 def save_files_to_directory(
-    output_directory: str, filepath: str, reports: list[dict[str, str]]
+    output_directory: str, filepath: Path, reports: list[dict[str, str]]
 ):
-    output_dir = Path(output_directory)
+    output_dir = Path(output_directory) / filepath.stem
     output_dir.mkdir(exist_ok=True)
 
-    fileout = output_dir / filepath
+    fileout = output_dir / filepath.name
     logger.info(f"Writing JSON to file: {fileout}")
     with fileout.open("w") as file:
         file.write(to_json_lines(reports))
 
-    html_out = output_dir / (fileout.stem + ".html")
-    for report in reports:
+    for i, report in enumerate(reports):
         if REPORT_TEXT_COLUMN in report:
+            html_out = output_dir / (f"{fileout.stem}_{i + 1}.html")
+            logger.debug(f"Writing HTML for report {i + 1} to file: {html_out}")
             logger.info(f"Writing HTML to file: {html_out}")
             with html_out.open("w") as file:
                 file.write(report[REPORT_TEXT_COLUMN])
-            break
 
 
 def load_files_from_s3(bucket_name: str, prefix: str = ""):
@@ -298,7 +304,10 @@ def list_s3_bucket():
 
 def main():
     global model_registry
-    model_registry = ModelRegistry("./models", "./saved_models")
+    model_registry = ModelRegistry(
+        {"models_dir": "models", "device": "cuda:7"},
+        {"models_dir": "ner/saved_models", "device": "cuda:7"},
+    )
 
     logger.info(f"Mode: {MODE}. Debug: {DEBUG}")
     logger.info("Starting NLP application...")
@@ -311,15 +320,16 @@ def main():
         return
 
     def run_app():
+        logger.info(f"Running app on port {PORT}.")
         if MODE == "testing":
             with mock_aws():
                 setup_testing_s3()
-                from waitress import serve
-
-                serve(app, host="0.0.0.0", port=os.getenv("PORT", 5000))
+                app.run(host="0.0.0.0", port=PORT, debug=True)
+        elif MODE == "development":
+            app.run(host="0.0.0.0", port=PORT, debug=True)
         else:
             from waitress import serve
 
-            serve(app, host="0.0.0.0", port=os.getenv("PORT", 5000))
+            serve(app, host="0.0.0.0", port=PORT)
 
     run_app()

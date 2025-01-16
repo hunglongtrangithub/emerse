@@ -12,17 +12,6 @@ pathology_template = env.get_template("pathology_template.html")
 mobility_template = env.get_template("mobility_template.html")
 
 
-def prepare_entities(entity_indexes: dict[str, list[tuple[int, int]]]) -> list[dict]:
-    """
-    Prepares a flat, sorted list of entities for the mobility template.
-    """
-    entities = []
-    for entity_type, indexes in entity_indexes.items():
-        for start, end in indexes:
-            entities.append({"start": start, "end": end, "type": entity_type})
-    return sorted(entities, key=lambda x: x["start"])
-
-
 def generate_pathology_html_report(
     report_text: str,
     index: int,
@@ -56,14 +45,16 @@ def generate_mobility_html_report(
     """
     Generate a mobility HTML report.
     """
-    entity_indexes = {
-        entity_name: [
-            (index_pair[0], index_pair[1])
-            for index_pair in entity_indexes[index].entity_indexes
-        ]
+    entities = {
+        entity_name: sorted(
+            [
+                {"start": start, "end": end}
+                for start, end in entity_indexes[index].entity_indexes
+            ],
+            key=lambda x: x["start"],
+        )
         for entity_name, entity_indexes in batch_entity_indexes.items()
     }
-    entities = prepare_entities(entity_indexes)
 
     html_content = mobility_template.render(
         report_text=report_text,
@@ -89,14 +80,14 @@ def generate_mobility_document_with_entities(
         A formatted string compliant with the EMERSE NLP pipeline.
     """
     # Prepare the entities section
-    entity_indexes = {
-        entity_name: [
-            (index_pair[0], index_pair[1])
-            for index_pair in entity_indexes[index].entity_indexes
-        ]
-        for entity_name, entity_indexes in batch_entity_indexes.items()
-    }
-    entities = prepare_entities(entity_indexes)
+    entities = []
+    for entity_name, entity_indexes in batch_entity_indexes.items():
+        entities.extend(
+            [
+                {"type": entity_name, "start": start, "end": end}
+                for start, end in entity_indexes[index].entity_indexes
+            ]
+        )
 
     # Header row (hardcoded example values for newline and space counts, and a separator)
     separator = "THIS_IS_A_SEPARATOR"
@@ -109,11 +100,13 @@ def generate_mobility_document_with_entities(
         start_offset = entity["start"]
         end_offset = entity["end"]
         match entity["type"]:
-            case "action":
+            case "Mobility":
+                artifact_id = f"CUI_{cui_code}"
+            case "Action":
                 artifact_id = f"CUI_{cui_code}_a"
-            case "quantification":
+            case "Quantification":
                 artifact_id = f"CUI_{cui_code}_q"
-            case "assistance":
+            case "Assistance":
                 artifact_id = f"CUI_{cui_code}_s"
             case _:
                 raise ValueError(f"Invalid entity type: {entity['type']}")
@@ -130,7 +123,9 @@ def generate_mobility_document_with_entities(
 
     # Combine all sections into the final document
     emerse_document = (
-        f"{header_row}\n{artifacts_section}\n{separator}\n{document_section}"
+        (f"{header_row}\n{artifacts_section}\n{separator}\n{document_section}")
+        if artifacts_section
+        else document_section  # TODO: Check if this is correct. Do we need to add the header row if there are no artifacts?
     )
     return emerse_document
 
@@ -165,7 +160,6 @@ def process_reports(
         reports: List of report dictionaries
         model_registry: Model registry instance
         predict_type: Type of prediction to perform ("pathology" or "mobility")
-        show_output: Whether to show predictions/annotations (defaults to True)
 
     Returns:
         List of processed reports with HTML content added

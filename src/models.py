@@ -1,3 +1,4 @@
+from typing import Literal
 from pathlib import Path
 from pydantic import BaseModel
 from typing import Any
@@ -64,7 +65,7 @@ class PathologyModelRegistry:
         )
 
     def load_models(self):
-        logger.info(f"Loading models on device: {self.device}")
+        logger.info(f"Loading pathology models on device: {self.device}")
 
         self.models = PathologyModels(
             pat=self._load_model(
@@ -106,7 +107,7 @@ class PathologyModelRegistry:
             input_texts,
             padding=True,
             truncation=True,
-            max_length=MAX_LENGTH,
+            max_length=min(MAX_LENGTH, model.config.max_position_embeddings),
             return_tensors="pt",
         ).to(self.device)
 
@@ -178,12 +179,13 @@ class BERT(nn.Module):
     def __init__(self, num_ner_labels, model_name):
         super(BERT, self).__init__()
         self.bert = AutoModel.from_pretrained(model_name)
+        self.max_length = self.bert.config.max_position_embeddings
         # For NER
         self.ner_dropout = nn.Dropout(self.bert.config.hidden_dropout_prob)
         self.ner_output = nn.Linear(self.bert.config.hidden_size, num_ner_labels)
 
-    def forward(self, input_ids=None):
-        embeddings = self.bert(input_ids)
+    def forward(self, input_ids=None, attention_mask=None):
+        embeddings = self.bert(input_ids, attention_mask=attention_mask)
 
         sequence_output = embeddings[0]
         sequence_output = self.ner_dropout(sequence_output)
@@ -219,16 +221,22 @@ class MobilityModelRegistry:
         self.models_dir = Path(models_dir)
         self.device = device
 
-    def _load_model(self, entity: str) -> MobilityModelConfig:
+    MobilityEntity = Literal["Action", "Assistance", "Mobility", "Quantification"]
+
+    def _load_model(self, entity: MobilityEntity) -> MobilityModelConfig:
         pretrained_model_name = "UFNLP/Gatortron-base"
-        tokenizer = AutoTokenizer.from_pretrained(pretrained_model_name)
+        tokenizer = AutoTokenizer.from_pretrained(
+            pretrained_model_name, clean_up_tokenization_spaces=False
+        )
         model = BERT(num_ner_labels=3, model_name=pretrained_model_name)
+        model_dir = self.models_dir / entity
         model.load_state_dict(
-            torch.load(self.models_dir / entity / "best_model_state.bin")
+            torch.load(model_dir / "best_model_state.bin", weights_only=True)
         )
         model.to(self.device)
         model.eval()
 
+        logger.info(f"{entity} model loaded successfully from {model_dir}")
         return MobilityModelConfig(
             name=entity,
             entity=entity,
@@ -238,9 +246,10 @@ class MobilityModelRegistry:
         )
 
     def load_models(self):
+        logger.info(f"Loading mobility models on device: {self.device}")
         self.models = MobilityModels(
             action=self._load_model("Action"),
-            assistant=self._load_model("Assistant"),
+            assistant=self._load_model("Assistance"),
             mobility=self._load_model("Mobility"),
             quantification=self._load_model("Quantification"),
         )
@@ -249,72 +258,110 @@ class MobilityModelRegistry:
         self, input_texts: list[str], model_config: MobilityModelConfig
     ) -> list[MobilityPrediction]:
         """
-        Extract entity indexes from a list of texts using a trained BERT-based model.
+        Extract entity indexes from a list of texts using batch processing with proper truncation.
+
+        Args:
+            input_texts: List of texts to process
+            model_config: Configuration containing model, tokenizer, and entity information
+
+        Returns:
+            List of MobilityPrediction objects containing the extraction results
         """
-        results = []
 
-        for text in input_texts:
-            encoding = model_config.tokenizer(
-                text, return_tensors="pt", truncation=True, padding=True
-            )
-            input_ids = encoding["input_ids"].to(self.device)
-            outputs = model_config.model(input_ids)
-            _, preds = torch.max(outputs[0], dim=1)
+        # Tokenize all texts in batch with proper truncation
+        encoding = model_config.tokenizer(
+            input_texts,
+            return_tensors="pt",
+            truncation=True,
+            padding=True,
+            max_length=model_config.model.max_length,
+            return_token_type_ids=False,
+            return_attention_mask=True,
+            return_offsets_mapping=True,  # Get character offsets for accurate entity extraction
+        )
 
-            tokens = model_config.tokenizer.convert_ids_to_tokens(
-                input_ids.to("cpu").numpy()[0]
-            )
+        # Move tensors to device
+        input_ids = encoding["input_ids"].to(self.device)
+        attention_mask = encoding["attention_mask"].to(self.device)
+        offset_mapping = encoding["offset_mapping"]  # Keep on CPU for processing
 
-            # Initialize character positions for each token
-            new_tokens, output_tags, token_char_positions = [], [], []
-            char_offset = 0
+        # Get model predictions in batch
+        with torch.no_grad():
+            outputs = model_config.model(input_ids, attention_mask=attention_mask)
+            # Get predictions along the last dimension (num_labels)
+            _, preds = torch.max(outputs, dim=-1)
 
-            for token, tag_idx in zip(tokens, preds):
+        # Process predictions for all texts
+        batch_results = []
+
+        # Move predictions to CPU for processing
+        preds = preds.cpu().numpy()
+        input_ids = input_ids.cpu().numpy()
+
+        for batch_idx, (text, pred, offsets) in enumerate(
+            zip(input_texts, preds, offset_mapping)
+        ):
+            # Get tokens for current text
+            tokens = model_config.tokenizer.convert_ids_to_tokens(input_ids[batch_idx])
+
+            # Initialize tracking variables
+            new_tokens = []
+            output_tags = []
+            token_char_positions = []
+
+            # Process tokens and track positions using offset mapping
+            for token, tag_idx, (start_offset, end_offset) in zip(
+                tokens, pred, offsets
+            ):
+                logger.debug(f"{token} - {tag_idx} - {start_offset} - {end_offset}")
+                # Skip special tokens and padding
+                if token in ["[PAD]", "[CLS]", "[SEP]"] or start_offset == end_offset:
+                    continue
+
+                # Handle subword tokens
                 if token.startswith("##"):
-                    # For subword tokens, append to the previous token and adjust the character position
-                    new_tokens[-1] += token[2:]
-                    token_char_positions[-1][1] += len(
-                        token[2:]
-                    )  # Extend the end position
-                    char_offset = token_char_positions[-1][1]
+                    if new_tokens:
+                        new_tokens[-1] += token[2:]
+                        token_char_positions[-1][1] = end_offset.item()
                 else:
-                    if token not in ["[PAD]", "[CLS]", "[SEP]"]:
-                        # Find the start and end position in the original text
-                        while text[char_offset] == " ":
-                            char_offset += 1  # Skip any spaces
+                    new_tokens.append(token)
+                    output_tags.append(model_config.tag_list[tag_idx])
+                    token_char_positions.append(
+                        [start_offset.item(), end_offset.item()]
+                    )
 
-                        start_position = char_offset
-                        end_position = start_position + len(token)
+            # Extract entity positions
+            entity_positions = []
+            current_entity = None
 
-                        output_tags.append(model_config.tag_list[tag_idx])
-                        new_tokens.append(token)
-                        token_char_positions.append([start_position, end_position])
+            for tag, char_pos in zip(output_tags, token_char_positions):
+                if tag == f"B-{model_config.entity}":
+                    if current_entity is not None:
+                        entity_positions.append(current_entity)
+                    current_entity = char_pos.copy()
+                elif tag == f"I-{model_config.entity}" and current_entity is not None:
+                    current_entity[1] = char_pos[1]
+                elif current_entity is not None:
+                    entity_positions.append(current_entity)
+                    current_entity = None
 
-                        char_offset = end_position  # Move to the next character offset
+            # Add final entity if exists
+            if current_entity is not None:
+                entity_positions.append(current_entity)
 
-            # Extract entity indexes
-            current_positions = []
-            for i, tag in enumerate(output_tags):
-                if tag == f"B-{model_config.entity}":  # Start of an entity
-                    current_positions.append(token_char_positions[i])
-                elif tag == f"I-{model_config.entity}":  # Continuation of an entity
-                    current_positions[-1][1] = token_char_positions[i][
-                        1
-                    ]  # Extend the end position
-
-            # Append results for this text
-            results.append(
+            # Create prediction object
+            batch_results.append(
                 MobilityPrediction(
                     tokenized_input=new_tokens,
                     output_tags=output_tags,
-                    entity_indexes=current_positions,
+                    entity_indexes=entity_positions,
                     extracted_entities=[
-                        text[idx[0] : idx[1]] for idx in current_positions
+                        text[idx[0] : idx[1]] for idx in entity_positions
                     ],
                 )
             )
 
-        return results
+        return batch_results
 
     def extract_entity_indexes(
         self, report_texts: list[str]
@@ -323,18 +370,22 @@ class MobilityModelRegistry:
             logger.info("Models are not loaded. Please load models first.")
             return {}
         return {
-            model_name: self.model_extract_entity_indexes(report_texts, model_config)
-            for model_name, model_config in self.models.model_dump().items()
+            model_config.name: self.model_extract_entity_indexes(
+                report_texts, model_config
+            )
+            for model_config in vars(self.models).values()
         }
 
 
 class ModelRegistry:
-    def __init__(self, pathology_models_dir: str, mobility_models_dir: str):
+    def __init__(self, pathology_params: dict, mobility_params: dict):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.pathology_registry = PathologyModelRegistry(
-            pathology_models_dir, self.device
-        )
-        self.mobility_registry = MobilityModelRegistry(mobility_models_dir, self.device)
+        if "device" not in pathology_params:
+            pathology_params["device"] = self.device
+        if "device" not in mobility_params:
+            mobility_params["device"] = self.device
+        self.pathology_registry = PathologyModelRegistry(**pathology_params)
+        self.mobility_registry = MobilityModelRegistry(**mobility_params)
         self.models_loaded = False
 
     def load_models(self):
@@ -362,8 +413,8 @@ class ModelRegistry:
 
     def check_all_models_health(self) -> tuple[bool, list[str]]:
         all_models = {
-            **self.pathology_registry.models.model_dump(),
-            **self.mobility_registry.models.model_dump(),
+            **vars(self.pathology_registry.models),
+            **vars(self.mobility_registry.models),
         }
         messages = []
         is_all_models_healthy = True
