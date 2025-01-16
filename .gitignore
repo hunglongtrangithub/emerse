@@ -10,3 +10,4 @@ emerse_clinical_docs*
 *.spec
 run
 output
+/ner

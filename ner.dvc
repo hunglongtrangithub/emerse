@@ -1,0 +1,6 @@
+outs:
+- md5: fc73fa77b98f58b72b773e3cb0f94fde.dir
+  size: 5684983371
+  nfiles: 5
+  hash: md5
+  path: ner
