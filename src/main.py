@@ -1,6 +1,7 @@
 import json
 import os
 from pathlib import Path
+from typing import get_args
 
 import boto3
 from moto import mock_aws
@@ -243,6 +244,13 @@ def predict_test():
     if predict_type is None:
         return jsonify({"error": "predict_type parameter is required"}), 400
     try:
+        allowed_predict_types = get_args(PredictType)
+        if predict_type not in allowed_predict_types:
+            return jsonify(
+                {
+                    "error": f"Invalid predict_type. Only supports one of the following: {allowed_predict_types}"
+                }
+            ), 400
         count = process_report_files(
             file_loader=lambda: load_files_from_directory("./input"),
             file_saver=lambda filepath, reports: save_files_to_directory(
@@ -267,6 +275,13 @@ def process_files():
     if predict_type is None:
         return jsonify({"error": "predict_type parameter is required"}), 400
     try:
+        allowed_predict_types = get_args(PredictType)
+        if predict_type not in allowed_predict_types:
+            return jsonify(
+                {
+                    "error": f"Invalid predict_type. Only supports one of the following: {allowed_predict_types}"
+                }
+            ), 400
         count = process_report_files(
             file_loader=lambda: load_files_from_s3(s3_bucket_name, input_prefix),
             file_saver=lambda obj_key, reports: save_files_to_s3(
