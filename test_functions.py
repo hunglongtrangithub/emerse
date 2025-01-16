@@ -1,11 +1,20 @@
 import os
+from pathlib import Path
 
 import pytest
 import boto3
 from moto import mock_aws
+from jinja2 import Environment, FileSystemLoader
+
 
 from src.models import ModelRegistry, PathologyPrediction, MobilityPrediction
-from src.process_report import get_reports_with_table, generate_html_report
+from src.process_report import (
+    process_reports,
+    generate_mobility_html_report,
+    generate_pathology_html_report,
+    generate_mobility_document_with_entities,
+)
+from src.config import REPORT_TEXT_COLUMN
 from src.main import (
     s3_accessible,
     load_files_from_s3,
@@ -15,7 +24,7 @@ from src.main import (
 )
 
 
-def test_generate_html_report():
+def test_generate_reports_mock():
     # Mock data for pathology predictions
     batch_predictions = [
         PathologyPrediction(
@@ -62,16 +71,16 @@ def test_generate_html_report():
                 extracted_entities=["ran quickly"],
             ),
         ],
-        "Assistant": [
+        "Assistance": [
             MobilityPrediction(
                 tokenized_input=["The", "nurse", "helped", "the", "patient", "."],
-                output_tags=["O", "B-Assistant", "I-Assistant", "O", "O", "O"],
+                output_tags=["O", "B-Assistance", "I-Assistance", "O", "O", "O"],
                 entity_indexes=[[4, 17]],  # Start and end positions for "nurse helped"
                 extracted_entities=["nurse helped"],
             ),
             MobilityPrediction(
                 tokenized_input=["Doctor", "provided", "assistance", "."],
-                output_tags=["B-Assistant", "I-Assistant", "I-Assistant", "O"],
+                output_tags=["B-Assistance", "I-Assistance", "I-Assistance", "O"],
                 entity_indexes=[
                     [0, 25]
                 ],  # Start and end positions for "Doctor provided assistance"
@@ -142,15 +151,30 @@ def test_generate_html_report():
     """
 
     # Mock index
-    index = 0  # Generate the HTML report
-    html_content = generate_html_report(
-        report_text, index, batch_predictions, batch_entity_indexes
+    index = 0
+    # Test for both pathology and mobility reports
+    pathology_html_report = generate_pathology_html_report(
+        report_text, index, batch_predictions
+    )
+    mobility_html_report = generate_mobility_html_report(
+        report_text, index, batch_entity_indexes
     )
 
-    with open("output/test_generate_html_report.html", "w") as f:
-        f.write(html_content)
+    output_dir = Path("./output/test")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    # Save the generated reports to the output directory
+    with open(output_dir / "pathology_report.html", "w") as f:
+        f.write(pathology_html_report)
+    with open(output_dir / "mobility_report.html", "w") as f:
+        f.write(mobility_html_report)
 
     print("HTML report generated successfully")
+
+    print("Mobility document with entities:")
+    mobility_document = generate_mobility_document_with_entities(
+        report_text, index, batch_entity_indexes
+    )
+    print(mobility_document)
 
 
 @pytest.fixture(scope="function")
@@ -174,13 +198,57 @@ def mocked_aws(aws_credentials):
         yield
 
 
-def test_batch():
-    model_registry = ModelRegistry("./models", "./saved_models")
+def test_generate_reports_real():
+    # Initialize the model registry
+    model_registry = ModelRegistry(
+        {"models_dir": "models", "device": "cuda:7"},
+        {"models_dir": "ner/saved_models", "device": "cuda:7"},
+    )
     model_registry.load_models()
-    reports = get_json_objects(open("input/test_batch.jsonl").read())
-    reports = get_reports_with_table(reports, model_registry)
-    with open("output/test_batch.jsonl", "w") as f:
-        f.write(to_json_lines(reports))
+
+    # Load the reports from jsonl files
+    for json_file in Path("input").glob("*.jsonl"):
+        print(f"Processing file: {json_file}")
+        reports = get_json_objects(open(json_file).read())
+        reports = reports[:5]  # Process only the first 5 reports
+        # Process the reports to get pathology and mobility predictions
+        pathology_reports = process_reports(
+            reports, model_registry, predict_type="pathology"
+        )
+        mobility_reports = process_reports(
+            reports, model_registry, predict_type="mobility"
+        )
+
+        # Generate HTML reports
+        for index, (pathology_report, mobility_report) in enumerate(
+            zip(pathology_reports, mobility_reports)
+        ):
+            print(f"Processing report {index}.")
+            if (
+                REPORT_TEXT_COLUMN not in pathology_report
+                or REPORT_TEXT_COLUMN not in mobility_report
+            ):
+                print(f"Skipping report {index} without text column")
+                continue
+
+            pathology_html_report = pathology_report[REPORT_TEXT_COLUMN]
+            mobility_html_report = mobility_report[REPORT_TEXT_COLUMN]
+            if "PRT_DOC" in mobility_report:
+                mobility_document = mobility_report["PRT_DOC"]
+
+            # Save the generated reports to the output directory
+            output_dir = Path("./output") / json_file.stem
+            output_dir.mkdir(parents=True, exist_ok=True)
+            with open(output_dir / f"pathology_report_{index}.html", "w") as f:
+                f.write(pathology_html_report)
+            with open(output_dir / f"mobility_report_{index}.html", "w") as f:
+                f.write(mobility_html_report)
+
+            print(f"HTML report {index} generated successfully")
+
+            # Generate and print mobility document with entities
+            with open(output_dir / f"mobility_document_{index}.txt", "w") as f:
+                f.write(mobility_document)
 
 
 def test_s3_accessible(mocked_aws):
@@ -247,6 +315,52 @@ def test_save_files_to_s3(mocked_aws):
     saved_data = get_json_objects(s3_object["Body"].read().decode("utf-8"))
 
     assert saved_data == test_data  # Ensure the saved data matches the input
+
+
+def test_templates():
+    # Load the Jinja2 environment
+    template_dir = "./templates"
+    env = Environment(loader=FileSystemLoader(template_dir))
+    pathology_template = env.get_template("pathology_template.html")
+    mobility_template = env.get_template("mobility_template.html")
+
+    # Test the pathology template
+    html_content = pathology_template.render(
+        report_text="Test report",
+        predictions=[
+            {
+                "field_name": "PAT",
+                "field": "Pathology",
+                "value": "Malignant",
+                "max_prob": 0.98,
+            },
+            {
+                "field_name": "LAT",
+                "field": "Laterality",
+                "value": "Left",
+                "max_prob": 0.92,
+            },
+        ],
+    )
+    print("Pathology template:")
+    print(html_content)
+
+    # Test the mobility template
+    html_content = mobility_template.render(
+        report_text="He able to tolerate 2 1/2 hike, mountain climbing",
+        entities={
+            "Mobility": [
+                {"start": 26, "end": 30},
+                {"start": 32, "end": 49},
+            ],
+            "Action": [
+                {"start": 26, "end": 30},
+                {"start": 32, "end": 49},
+            ],
+        },
+    )
+    print("Mobility template:")
+    print(html_content)
 
 
 if __name__ == "__main__":
