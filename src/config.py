@@ -11,7 +11,8 @@ load_dotenv()
 
 # Environment variables
 DEBUG = os.getenv("DEBUG", False)
-MODE = os.getenv("MODE", "development")
+MODE = os.getenv("MODE", "development")  # development, production, testing
+PORT = int(os.getenv("PORT", 5000))
 # Maximum length of input sequence to truncate
 MAX_LENGTH = int(os.getenv("MAX_LENGTH", 4096))
 # Batch size for prediction
