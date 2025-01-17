@@ -120,6 +120,7 @@ def generate_mobility_document_with_entities(
 
     # Original document section
     document_section = report_text.strip()
+    print(f"Document section: {document_section[:100]}...")
 
     # Combine all sections into the final document
     emerse_document = (
@@ -155,6 +156,7 @@ def process_reports(
 ) -> list[dict[str, str]]:
     """
     Process reports with either pathology predictions or mobility annotations based on predict_type.
+    Mutates the input reports by adding HTML content.
 
     Args:
         reports: List of report dictionaries

@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+import copy
 
 import pytest
 import boto3
@@ -213,10 +214,10 @@ def test_generate_reports_real():
         reports = reports[:5]  # Process only the first 5 reports
         # Process the reports to get pathology and mobility predictions
         pathology_reports = process_reports(
-            reports, model_registry, predict_type="pathology"
+            copy.deepcopy(reports), model_registry, predict_type="pathology"
         )
         mobility_reports = process_reports(
-            reports, model_registry, predict_type="mobility"
+            copy.deepcopy(reports), model_registry, predict_type="mobility"
         )
 
         # Generate HTML reports
@@ -233,22 +234,21 @@ def test_generate_reports_real():
 
             pathology_html_report = pathology_report[REPORT_TEXT_COLUMN]
             mobility_html_report = mobility_report[REPORT_TEXT_COLUMN]
-            if "PRT_DOC" in mobility_report:
-                mobility_document = mobility_report["PRT_DOC"]
-
             # Save the generated reports to the output directory
             output_dir = Path("./output") / json_file.stem
             output_dir.mkdir(parents=True, exist_ok=True)
+
             with open(output_dir / f"pathology_report_{index}.html", "w") as f:
                 f.write(pathology_html_report)
             with open(output_dir / f"mobility_report_{index}.html", "w") as f:
                 f.write(mobility_html_report)
+            if "PRT_DOC" in mobility_report:
+                mobility_document = mobility_report["PRT_DOC"]
+                # Generate and print mobility document with entities
+                with open(output_dir / f"mobility_document_{index}.txt", "w") as f:
+                    f.write(mobility_document)
 
             print(f"HTML report {index} generated successfully")
-
-            # Generate and print mobility document with entities
-            with open(output_dir / f"mobility_document_{index}.txt", "w") as f:
-                f.write(mobility_document)
 
 
 def test_s3_accessible(mocked_aws):
