@@ -184,6 +184,9 @@ def process_reports(
         batch_reports = valid_reports[start:end]
 
         if predict_type == "pathology":
+            if model_registry.pathology_registry is None:
+                logger.error("Pathology model not found in the model registry.")
+                return reports
             # Get pathology predictions
             batch_predictions = model_registry.pathology_registry.predict(batch_texts)
 
@@ -199,6 +202,9 @@ def process_reports(
                 report[REPORT_TEXT_COLUMN] = report_html
 
         elif predict_type == "mobility":
+            if model_registry.mobility_registry is None:
+                logger.error("Mobility model not found in the model registry.")
+                return reports
             # Get mobility annotations
             batch_entity_indexes = (
                 model_registry.mobility_registry.extract_entity_indexes(batch_texts)

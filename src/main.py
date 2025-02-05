@@ -256,7 +256,7 @@ def predict_test():
             file_saver=lambda filepath, reports: save_files_to_directory(
                 "./output", filepath, reports
             ),
-            predict_type=predict_type,
+            predict_type=predict_type,  # type: ignore
             test=True,
         )
         return jsonify({"processed reports count": count}), 200
@@ -287,7 +287,7 @@ def process_files():
             file_saver=lambda obj_key, reports: save_files_to_s3(
                 s3_bucket_name, output_prefix, obj_key, reports
             ),
-            predict_type=predict_type,
+            predict_type=predict_type,  # type: ignore
         )
         return jsonify({"processed reports count": count}), 200
     except Exception as e:

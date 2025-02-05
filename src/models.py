@@ -378,19 +378,31 @@ class MobilityModelRegistry:
 
 
 class ModelRegistry:
-    def __init__(self, pathology_params: dict, mobility_params: dict):
+    def __init__(
+        self, pathology_params: dict | None = None, mobility_params: dict | None = None
+    ):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        if "device" not in pathology_params:
-            pathology_params["device"] = self.device
-        if "device" not in mobility_params:
-            mobility_params["device"] = self.device
-        self.pathology_registry = PathologyModelRegistry(**pathology_params)
-        self.mobility_registry = MobilityModelRegistry(**mobility_params)
+        if pathology_params is None:
+            self.pathology_registry = None
+        else:
+            if "device" not in pathology_params:
+                pathology_params["device"] = self.device
+            self.pathology_registry = PathologyModelRegistry(**pathology_params)
+
+        if mobility_params is None:
+            self.mobility_registry = None
+        else:
+            if "device" not in mobility_params:
+                mobility_params["device"] = self.device
+            self.mobility_registry = MobilityModelRegistry(**mobility_params)
+
         self.models_loaded = False
 
     def load_models(self):
-        self.pathology_registry.load_models()
-        self.mobility_registry.load_models()
+        if self.pathology_registry is not None:
+            self.pathology_registry.load_models()
+        if self.mobility_registry is not None:
+            self.mobility_registry.load_models()
         self.models_loaded = True
 
     def check_model_health(self, model_config: ModelConfig):
@@ -413,8 +425,8 @@ class ModelRegistry:
 
     def check_all_models_health(self) -> tuple[bool, list[str]]:
         all_models = {
-            **vars(self.pathology_registry.models),
-            **vars(self.mobility_registry.models),
+            **(vars(self.pathology_registry.models) if self.pathology_registry else {}),
+            **(vars(self.mobility_registry.models) if self.mobility_registry else {}),
         }
         messages = []
         is_all_models_healthy = True
