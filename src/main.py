@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import get_args
 
 import boto3
+import snowflake.connector
 from moto import mock_aws
 import torch
 from flask import Flask, jsonify, request
@@ -53,9 +54,27 @@ def s3_accessible():
         return False, str(e)
 
 
+def snowflake_accessible():
+    try:
+        conn = snowflake.connector.connect(connection_name="emerse_snowflake")
+        conn.cursor().execute("SELECT 1")
+        conn.close()
+        return True, (
+            "Snowflake connection verified."
+            f' Host: "{conn.host}" |'
+            f' Role: "{conn.role}" |'
+            f' Warehouse: "{conn.warehouse}" |'
+            f' Database: "{conn.database}" |'
+            f' Schema: "{conn.schema}" |'
+        )
+    except Exception as e:
+        return False, str(e)
+
+
 health.add_check(models_healthy)
 health.add_check(cuda_available)
 health.add_check(s3_accessible)
+health.add_check(snowflake_accessible)
 
 
 def application_data():
@@ -320,8 +339,8 @@ def list_s3_bucket():
 def main():
     global model_registry
     model_registry = ModelRegistry(
-        {"models_dir": "models", "device": "cuda:7"},
-        {"models_dir": "ner/saved_models", "device": "cuda:7"},
+        {"models_dir": "models"},
+        # {"models_dir": "ner/saved_models", "device": "cuda:7"},
     )
 
     logger.info(f"Mode: {MODE}. Debug: {DEBUG}")
