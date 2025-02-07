@@ -338,6 +338,7 @@ def list_s3_bucket():
 
 def main():
     global model_registry
+    # NOTE: NER models are not yet available in AWS ECS so they are commented out
     model_registry = ModelRegistry(
         {"models_dir": "models"},
         # {"models_dir": "ner/saved_models", "device": "cuda:7"},
