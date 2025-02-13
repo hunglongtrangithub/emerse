@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import get_args
 
 import boto3
-import snowflake.connector
 from moto import mock_aws
 import torch
 from flask import Flask, jsonify, request
@@ -55,18 +54,14 @@ def s3_accessible():
 
 
 def snowflake_accessible():
+    # NOTE: the import of snowflake.connector has to be after load_dotenv(), because snowflake.connector sets SNOWFLAKE_HOME right in the import. It may miss the value set in the .env file.
+    import snowflake.connector
+
     try:
         conn = snowflake.connector.connect(connection_name="emerse_snowflake")
         conn.cursor().execute("SELECT 1")
         conn.close()
-        return True, (
-            "Snowflake connection verified."
-            f' Host: "{conn.host}" |'
-            f' Role: "{conn.role}" |'
-            f' Warehouse: "{conn.warehouse}" |'
-            f' Database: "{conn.database}" |'
-            f' Schema: "{conn.schema}" |'
-        )
+        return True, "Snowflake connection verified"
     except Exception as e:
         return False, str(e)
 
@@ -338,10 +333,9 @@ def list_s3_bucket():
 
 def main():
     global model_registry
-    # NOTE: NER models are not yet available in AWS ECS so they are commented out
     model_registry = ModelRegistry(
-        {"models_dir": "models"},
-        # {"models_dir": "ner/saved_models", "device": "cuda:7"},
+        {"models_dir": "models", "device": "cuda"},
+        {"models_dir": "ner/saved_models", "device": "cuda"},
     )
 
     logger.info(f"Mode: {MODE}. Debug: {DEBUG}")

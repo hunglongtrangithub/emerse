@@ -11,8 +11,7 @@ load_dotenv()
 
 # Environment variables
 DEBUG = os.getenv("DEBUG", False)
-# NOTE: This is just temporary for a quick push to AWS ECS
-MODE = os.getenv("MODE", "production")  # development, production, testing
+MODE = os.getenv("MODE", "development")  # development, production, testing
 PORT = int(os.getenv("PORT", 5000))
 # Maximum length of input sequence to truncate
 MAX_LENGTH = int(os.getenv("MAX_LENGTH", 4096))
@@ -22,12 +21,13 @@ BATCH_SIZE = int(os.getenv("BATCH_SIZE", 32))
 REPORT_TEXT_COLUMN = os.getenv("REPORT_TEXT_COLUMN", "RPT_TEXT")
 
 # Configure Loguru based on MODE
+logger.remove()
 if MODE == "production":
     log_file = Path("./log/nlp_app.log")
     log_file.parent.mkdir(exist_ok=True)
     logger.add(log_file, level="INFO", rotation="10 MB")
+    logger.add(sys.stderr, level="INFO")
 else:
-    logger.remove()  # Remove default stderr logging
     logger.add(sys.stderr, level="DEBUG" if DEBUG else "INFO")
 
 
