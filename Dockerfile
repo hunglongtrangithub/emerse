@@ -28,9 +28,12 @@ COPY ./pyproject.toml ./uv.lock ./
 RUN uv sync --frozen --no-cache
 
 COPY ./templates/ ./templates/
+COPY ./.snowflake/ ./.snowflake/
 COPY ./src/ ./src/
 COPY ./run.py ./
 
+ENV SNOWFLAKE_HOME="/app/.snowflake/"
+ENV MODE="production"
 CMD ["uv", "run", "run.py"]
 
 EXPOSE 5000

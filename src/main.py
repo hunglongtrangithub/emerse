@@ -53,9 +53,23 @@ def s3_accessible():
         return False, str(e)
 
 
+def snowflake_accessible():
+    # NOTE: the import of snowflake.connector has to be after load_dotenv(), because snowflake.connector sets SNOWFLAKE_HOME right in the import. It may miss the value set in the .env file.
+    import snowflake.connector
+
+    try:
+        conn = snowflake.connector.connect(connection_name="emerse_snowflake")
+        conn.cursor().execute("SELECT 1")
+        conn.close()
+        return True, "Snowflake connection verified"
+    except Exception as e:
+        return False, str(e)
+
+
 health.add_check(models_healthy)
 health.add_check(cuda_available)
 health.add_check(s3_accessible)
+health.add_check(snowflake_accessible)
 
 
 def application_data():
@@ -320,8 +334,8 @@ def list_s3_bucket():
 def main():
     global model_registry
     model_registry = ModelRegistry(
-        {"models_dir": "models", "device": "cuda:7"},
-        {"models_dir": "ner/saved_models", "device": "cuda:7"},
+        {"models_dir": "models", "device": "cuda"},
+        {"models_dir": "ner/saved_models", "device": "cuda"},
     )
 
     logger.info(f"Mode: {MODE}. Debug: {DEBUG}")

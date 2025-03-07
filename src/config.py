@@ -21,12 +21,13 @@ BATCH_SIZE = int(os.getenv("BATCH_SIZE", 32))
 REPORT_TEXT_COLUMN = os.getenv("REPORT_TEXT_COLUMN", "RPT_TEXT")
 
 # Configure Loguru based on MODE
+logger.remove()
 if MODE == "production":
     log_file = Path("./log/nlp_app.log")
     log_file.parent.mkdir(exist_ok=True)
     logger.add(log_file, level="INFO", rotation="10 MB")
+    logger.add(sys.stderr, level="INFO")
 else:
-    logger.remove()  # Remove default stderr logging
     logger.add(sys.stderr, level="DEBUG" if DEBUG else "INFO")
 
 
